@@ -1,42 +1,54 @@
 # Xadrez Coach
 
-Interface web de análise assistida por Stockfish 18 executado localmente no navegador. O projeto não usa LLM, API paga ou serviço com cobrança por uso.
+Interface web de estudo e análise assistida por Stockfish 18 executado localmente no navegador. O projeto não usa LLM, API paga ou serviço com cobrança por uso.
 
-## Estratégia atual
+## Modos de uso
 
-O usuário escolhe primeiro o seu lado: brancas ou pretas.
+### Coach
 
-Depois disso, ele controla manualmente as duas cores do tabuleiro. Não existe mais um adversário automático. O objetivo é permitir reproduzir qualquer sequência de lances enquanto o sistema mantém a análise orientada para o lado escolhido.
+O usuário escolhe brancas ou pretas e recebe recomendações orientadas somente ao seu lado. A outra cor continua sendo movimentada manualmente, permitindo reproduzir partidas reais no tabuleiro.
 
-- Se for a vez do seu lado, o coach mostra a melhor jogada, destaca origem/destino e exibe até três variantes.
-- Se for a vez do adversário, você movimenta manualmente a outra cor. A avaliação continua sendo exibida do ponto de vista do seu lado, mas a recomendação de jogada fica aguardando a sua próxima vez.
-- A barra de avaliação é sempre normalizada para o lado escolhido: positivo significa vantagem para você.
-- A revisão pós-partida considera apenas os lances do lado escolhido.
+### Análise livre
+
+O Stockfish acompanha ambos os lados continuamente. É indicado para estudar posições, testar variantes, carregar FENs ou revisar partidas completas.
 
 ## Funcionalidades
 
-- escolha inicial entre brancas e pretas;
-- tabuleiro orientado automaticamente pelo lado escolhido;
+- escolha inicial entre brancas, pretas e modo de análise livre;
+- tabuleiro orientado automaticamente;
 - controle manual das duas cores;
 - movimentação por clique e arrastar/soltar;
 - validação completa de movimentos com `chess.js`;
 - promoção com escolha entre dama, torre, bispo e cavalo;
-- destaque de movimentos legais;
-- destaque do último lance;
-- indicação visual de xeque;
-- indicação da melhor jogada sem seta sobreposta ao tabuleiro;
-- Top 3 variantes quando é a vez do lado escolhido;
-- avaliação sempre orientada ao lado escolhido;
-- histórico da partida;
-- desfazer um lance;
-- revisão dos seus lances com perda em centipawns e precisão estimada;
+- destaque de movimentos legais e do último lance;
+- indicação visual de xeque e xeque-mate;
+- modal explícito de fim de partida com vencedor e causa;
+- tratamento de xeque-mate, afogamento, repetição tripla e material insuficiente;
+- melhor jogada em SAN e UCI;
+- seta visual da recomendação no tabuleiro;
+- indicação de mate em N e alerta de ameaça de mate;
+- Top N variantes configurável (MultiPV 1–5);
+- profundidade de análise configurável;
+- avaliação normalizada para o lado escolhido;
+- explicações heurísticas e tags de ideias táticas/posicionais sem LLM;
+- histórico clicável e navegação lance a lance (`⏮ ← → ⏭`);
+- importação de PGN;
+- exportação de PGN;
+- carregamento e cópia de FEN;
+- persistência automática da última sessão em `localStorage`;
+- revisão pós-partida com perda em centipawns e precisão estimada;
+- classificação dos lances (melhor, excelente, bom, imprecisão, erro e erro grave);
+- resumo quantitativo da qualidade dos lances;
+- gráfico de avaliação da revisão;
+- comparação interativa entre o lance realizado e o melhor lance;
+- treino das posições em que ocorreram erros ou erros graves;
 - Stockfish 18 em Web Worker/WebAssembly;
 - interface responsiva para desktop e mobile.
 
 ## Stack
 
 - React 19 + TypeScript
-- Vite
+- Vite 7
 - `chess.js`
 - Stockfish 18 via pacote `stockfish`
 
@@ -45,7 +57,7 @@ Depois disso, ele controla manualmente as duas cores do tabuleiro. Não existe m
 A forma recomendada no Linux é:
 
 ```bash
-./star.sh
+./start.sh
 ```
 
 O script instala as dependências quando necessário, prepara os arquivos locais do Stockfish, inicia o Vite em segundo plano, registra o PID e grava o log em `.xadrez-dev.log`.
@@ -59,7 +71,7 @@ http://localhost:5173
 Outra porta:
 
 ```bash
-PORT=5174 ./star.sh
+PORT=5174 ./start.sh
 ```
 
 Parar tudo:
@@ -75,20 +87,35 @@ npm install
 npm run dev
 ```
 
-Build:
+## Validação
+
+Testes rápidos das regras críticas de xadrez:
+
+```bash
+npm test
+```
+
+Build de produção:
 
 ```bash
 npm run build
-npm run preview
 ```
+
+Executar testes e build em sequência:
+
+```bash
+npm run check
+```
+
+Os testes cobrem, entre outros pontos, xeque-mate, afogamento, repetição tripla, material insuficiente, roque, en passant e promoção.
 
 ## Arquitetura
 
 Toda a inteligência de xadrez roda localmente. O frontend envia posições FEN ao Stockfish via protocolo UCI e recebe avaliações, variantes e melhor lance.
 
-O score retornado pelo motor é convertido para a perspectiva do lado escolhido. Por isso, a interface não muda o significado da avaliação quando você joga de pretas.
+No modo Coach, o score do motor é convertido para a perspectiva do lado escolhido. No modo Análise, a avaliação fica na perspectiva das brancas, seguindo a convenção mais comum de ferramentas de análise.
 
-As recomendações de jogada são exibidas apenas quando o lado escolhido é quem deve mover. Durante o turno adversário, o usuário informa manualmente o lance da outra cor; em seguida o coach recalcula a melhor resposta para o seu lado.
+A sessão atual é persistida apenas no armazenamento local do navegador. PGN e FEN podem ser importados/exportados sem backend.
 
 ## Diagnóstico
 

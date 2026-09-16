@@ -35,7 +35,7 @@ else
   echo "Dependências já instaladas."
 fi
 
-echo "Preparando Stockfish 18..."
+echo "Preparando Stockfish 19..."
 npm run prepare:engine
 
 : > "$LOG_FILE"

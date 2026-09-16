@@ -43,6 +43,7 @@ export class StockfishEngine {
       this.worker.postMessage('stop')
       this.worker.postMessage('setoption name UCI_LimitStrength value false')
       this.worker.postMessage(`setoption name MultiPV value ${Math.max(1, Math.min(5, multiPv))}`)
+      await this.waitForReady()
       this.worker.postMessage(`position fen ${fen}`)
       return this.startSearch(fen, `go depth ${Math.max(1, depth)}`)
     })
@@ -55,6 +56,7 @@ export class StockfishEngine {
       this.worker.postMessage('setoption name MultiPV value 1')
       this.worker.postMessage('setoption name UCI_LimitStrength value true')
       this.worker.postMessage(`setoption name UCI_Elo value ${Math.max(1320, Math.min(3190, elo))}`)
+      await this.waitForReady()
       this.worker.postMessage(`position fen ${fen}`)
 
       try {
@@ -75,11 +77,13 @@ export class StockfishEngine {
     if (!this.destroyed && !this.workerFailed) this.worker.postMessage('stop')
   }
 
-  async newGame() {
-    await this.ensureReady()
-    this.stop()
-    this.worker.postMessage('ucinewgame')
-    this.worker.postMessage('isready')
+  newGame() {
+    return this.enqueue(async () => {
+      await this.ensureReady()
+      this.stop()
+      this.worker.postMessage('ucinewgame')
+      await this.waitForReady()
+    })
   }
 
   destroy() {
@@ -169,6 +173,40 @@ export class StockfishEngine {
     }
 
     this.ensureAlive()
+  }
+
+  private waitForReady(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const timeoutId = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(new Error('Stockfish não confirmou que está pronto para analisar.'))
+      }, ENGINE_READY_TIMEOUT_MS)
+
+      const cleanup = () => {
+        window.clearTimeout(timeoutId)
+        this.worker.removeEventListener('message', onMessage)
+        this.worker.removeEventListener('error', onError)
+      }
+      const onMessage = (event: MessageEvent) => {
+        if (String(event.data) !== 'readyok' || settled) return
+        settled = true
+        cleanup()
+        resolve()
+      }
+      const onError = () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(new Error('Stockfish falhou enquanto aplicava a configuração UCI.'))
+      }
+
+      this.worker.addEventListener('message', onMessage)
+      this.worker.addEventListener('error', onError)
+      this.worker.postMessage('isready')
+    })
   }
 
   private startSearch(fen: string, command: string): Promise<EngineAnalysis> {

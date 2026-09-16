@@ -20,14 +20,37 @@ const PIECE_SET_OPTIONS = [
   { id: 'cburnett', label: 'Cburnett', description: 'Clássico e competitivo' },
   { id: 'merida', label: 'Mérida', description: 'Tradicional e refinado' },
   { id: 'alpha', label: 'Alpha', description: 'Minimalista e técnico' },
+  { id: 'chessnut', label: 'Chessnut', description: 'Esculpido e expressivo' },
+  { id: 'rhosgfx', label: 'RhosGFX', description: 'Geométrico e nítido' },
+  { id: 'fantasy', label: 'Fantasy', description: 'Ilustrado e distinto' },
+  { id: 'spatial', label: 'Spatial', description: 'Moderno e volumétrico' },
+  { id: 'celtic', label: 'Celtic', description: 'Ornamental e artístico' },
+  { id: 'shapes', label: 'Shapes', description: 'Abstrato e direto' },
+  { id: 'firi', label: 'Firi', description: 'Vetorial e elegante' },
 ] as const
 const BOARD_THEME_OPTIONS = [
   { id: 'walnut', label: 'Nogueira', description: 'Areia e nogueira' },
   { id: 'oak', label: 'Carvalho', description: 'Creme e musgo' },
   { id: 'graphite', label: 'Grafite', description: 'Pedra e carvão' },
+  { id: 'tournament', label: 'Torneio', description: 'Marfim e verde FIDE' },
+  { id: 'midnight', label: 'Meia-noite', description: 'Gelo e azul profundo' },
+  { id: 'ocean', label: 'Oceano', description: 'Espuma e azul-petróleo' },
+  { id: 'burgundy', label: 'Bordô', description: 'Pergaminho e vinho' },
+  { id: 'lavender', label: 'Lavanda', description: 'Névoa e violeta' },
+  { id: 'espresso', label: 'Espresso', description: 'Creme e café' },
+  { id: 'ember', label: 'Brasa', description: 'Cinza e terracota' },
 ] as const
 type PieceSet = (typeof PIECE_SET_OPTIONS)[number]['id']
 type BoardTheme = (typeof BOARD_THEME_OPTIONS)[number]['id']
+const HINT_STYLE_OPTIONS = [
+  { id: 'classic', label: 'Clássica', description: 'Dourada e discreta' },
+  { id: 'tactical', label: 'Tática', description: 'Azul elétrico' },
+  { id: 'forest', label: 'Floresta', description: 'Verde de confirmação' },
+  { id: 'signal', label: 'Sinal', description: 'Coral de alto contraste' },
+  { id: 'ghost', label: 'Sutil', description: 'Cinza translúcido' },
+] as const
+type HintStyle = (typeof HINT_STYLE_OPTIONS)[number]['id']
+type FavoriteAppearance = { pieceSet: PieceSet; boardTheme: BoardTheme; hintStyle: HintStyle }
 const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' }
 const PREFERENCES_KEY = 'xadrez-studio-board-preferences-v1'
 
@@ -227,6 +250,8 @@ export default function App() {
   const [puzzleIndex, setPuzzleIndex] = useState<number | null>(null)
   const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett')
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('walnut')
+  const [hintStyle, setHintStyle] = useState<HintStyle>('classic')
+  const [favoriteAppearance, setFavoriteAppearance] = useState<FavoriteAppearance | null>(null)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
   const history = liveGame.history()
@@ -258,15 +283,17 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as Partial<{ pieceSet: PieceSet; boardTheme: BoardTheme }>
+      const saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as Partial<FavoriteAppearance & { favoriteAppearance: FavoriteAppearance }>
       if (PIECE_SET_OPTIONS.some((option) => option.id === saved.pieceSet)) setPieceSet(saved.pieceSet!)
       if (BOARD_THEME_OPTIONS.some((option) => option.id === saved.boardTheme)) setBoardTheme(saved.boardTheme!)
+      if (HINT_STYLE_OPTIONS.some((option) => option.id === saved.hintStyle)) setHintStyle(saved.hintStyle!)
+      if (saved.favoriteAppearance && PIECE_SET_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.pieceSet) && BOARD_THEME_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.boardTheme) && HINT_STYLE_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.hintStyle)) setFavoriteAppearance(saved.favoriteAppearance)
     } catch { /* Preferences are optional. */ }
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ pieceSet, boardTheme }))
-  }, [pieceSet, boardTheme])
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ pieceSet, boardTheme, hintStyle, favoriteAppearance }))
+  }, [pieceSet, boardTheme, hintStyle, favoriteAppearance])
 
   useEffect(() => {
     if (!playerSide) return
@@ -334,7 +361,11 @@ export default function App() {
     gameRef.current = next; setPlayerSide(side); setMode(nextMode); setFen(next.fen())
     setSelected(null); setLastMove(null); setAnalysis(null); setReview([]); setEngineError(null)
     setPendingPromotion(null); setThinking(false); setViewPly(null); setSelectedReviewPly(null); setShowGameOver(false)
-    void analyzePosition(next, side, sessionRef.current, { mode: nextMode })
+    const engineReset = engineRef.current?.newGame() ?? Promise.resolve()
+    void engineReset.then(
+      () => analyzePosition(next, side, sessionRef.current, { mode: nextMode }),
+      () => analyzePosition(next, side, sessionRef.current, { mode: nextMode }),
+    )
   }
 
   function leaveToSetup() {
@@ -486,10 +517,10 @@ export default function App() {
             const hintedFrom = viewPly === null && hintFrom === square; const hintedTo = viewPly === null && hintTo === square; const row = Math.floor(index / 8); const col = index % 8
             return <button key={square} type="button" className={`square ${isLightSquare(square) ? 'light' : 'dark'} ${selected === square ? 'selected' : ''} ${target ? 'target' : ''} ${last ? 'last-move' : ''} ${checkedKing === square ? (displayedGame.isCheckmate() ? 'checkmated' : 'checked') : ''} ${hintedFrom ? 'hint-from' : ''} ${hintedTo ? 'hint-to' : ''}`} onClick={() => clickSquare(square)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnSquare(square, event)} aria-label={square}>
               {piece && <span className={`piece piece-${pieceSet} ${piece.color}`} draggable={!boardLocked && piece.color === liveGame.turn()} onDragStart={(event) => dragStart(square, event)}><img src={pieceAsset(pieceSet, piece.color, piece.type)} alt={PIECES[`${piece.color}${piece.type}`]} draggable={false} /></span>}
-              {col === 0 && <span className="coord rank-label">{square[1]}</span>}{row === 7 && <span className="coord file-label">{square[0]}</span>}
+              {col === 0 && <span className={`coord rank-label ${isLightSquare(square) ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[1]}</span>}{row === 7 && <span className={`coord file-label ${isLightSquare(square) ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[0]}</span>}
             </button>
           })}
-          {arrowFrom && arrowTo && viewPly === null && <svg className="hint-arrow" viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="arrowhead" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><polygon points="0 0, 5 2.5, 0 5" /></marker></defs><line x1={arrowFrom.x} y1={arrowFrom.y} x2={arrowTo.x} y2={arrowTo.y} markerEnd="url(#arrowhead)" /></svg>}
+          {arrowFrom && arrowTo && viewPly === null && <svg className={`hint-arrow hint-${hintStyle}`} viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="arrowhead" markerWidth="3.8" markerHeight="3.8" refX="3.2" refY="1.9" orient="auto"><polygon points="0 0, 3.8 1.9, 0 3.8" /></marker></defs><line x1={arrowFrom.x} y1={arrowFrom.y} x2={arrowTo.x} y2={arrowTo.y} markerEnd="url(#arrowhead)" /></svg>}
         </div>
         {reviewing && <div className="board-overlay"><span className="spinner" /><strong>Analisando seus lances</strong></div>}
       </div>
@@ -504,7 +535,7 @@ export default function App() {
       <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? displayEval(userEval) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
       <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{explainMove(liveGame, bestMove)}</p><div className="idea-tags">{tacticalIdeas(liveGame, bestMove).map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
       <section className="card"><div className="card-title"><strong>Linhas candidatas</strong><span>Top {multiPv}</span></div><div className="lines">{recommendationActive && analysis?.lines.length ? analysis.lines.map((line) => { const score = line.mate !== null ? scoreForSide(Math.sign(line.mate) * 10000, perspective) : scoreForSide(line.scoreCp ?? 0, perspective); return <div className="line" key={line.multipv}><b>{line.multipv}</b><code>{pvToSan(liveGame.fen(), line.pv)}</code><span>{line.mate !== null ? `${score > 0 ? 'M+' : 'M−'}${Math.abs(line.mate)}` : displayEval(score)}</span></div> }) : <div className="empty-state">Sem variantes nesta posição.</div>}</div></section>
-      <section className="card appearance-card"><div className="card-title"><strong>Aparência do tabuleiro</strong><span>salvo localmente</span></div><div className="appearance-group"><span>Peças</span><div className="appearance-options">{PIECE_SET_OPTIONS.map((option) => <button key={option.id} className={pieceSet === option.id ? 'selected-appearance' : ''} onClick={() => setPieceSet(option.id)}><b>{option.label}</b><small>{option.description}</small></button>)}</div></div><div className="appearance-group"><span>Madeira / superfície</span><div className="appearance-options">{BOARD_THEME_OPTIONS.map((option) => <button key={option.id} className={boardTheme === option.id ? 'selected-appearance' : ''} onClick={() => setBoardTheme(option.id)}><b>{option.label}</b><small>{option.description}</small></button>)}</div></div></section>
+      <section className="card appearance-card"><div className="card-title"><strong>Aparência</strong><span>salvo localmente</span></div><label className="appearance-select"><span>Conjunto de peças · {PIECE_SET_OPTIONS.length} estilos</span><select value={pieceSet} onChange={(event) => setPieceSet(event.target.value as PieceSet)}>{PIECE_SET_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Tabuleiro · {BOARD_THEME_OPTIONS.length} temas</span><select value={boardTheme} onChange={(event) => setBoardTheme(event.target.value as BoardTheme)}>{BOARD_THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Seta de dica · {HINT_STYLE_OPTIONS.length} estilos</span><select value={hintStyle} onChange={(event) => setHintStyle(event.target.value as HintStyle)}>{HINT_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><div className="favorite-appearance"><div><strong>{favoriteAppearance ? 'Favorito salvo' : 'Sem favorito salvo'}</strong><small>{favoriteAppearance ? `${PIECE_SET_OPTIONS.find((option) => option.id === favoriteAppearance.pieceSet)?.label} · ${BOARD_THEME_OPTIONS.find((option) => option.id === favoriteAppearance.boardTheme)?.label} · ${HINT_STYLE_OPTIONS.find((option) => option.id === favoriteAppearance.hintStyle)?.label}` : 'Salve sua combinação atual para recuperá-la em um clique.'}</small></div><button onClick={() => setFavoriteAppearance({ pieceSet, boardTheme, hintStyle })}>Salvar favorito</button>{favoriteAppearance && <button className="apply-favorite" onClick={() => { setPieceSet(favoriteAppearance.pieceSet); setBoardTheme(favoriteAppearance.boardTheme); setHintStyle(favoriteAppearance.hintStyle) }}>Aplicar favorito</button>}</div></section>
       <section className="card engine-settings"><div className="card-title"><strong>Força da análise</strong><span>local</span></div><label>Profundidade <b>{depth}</b><input type="range" min="10" max="20" value={depth} onChange={(e) => setDepth(Number(e.target.value))} /></label><label>Variantes <b>{multiPv}</b><input type="range" min="1" max="5" value={multiPv} onChange={(e) => setMultiPv(Number(e.target.value))} /></label><button onClick={() => analyzePosition(liveGame, playerSide, sessionRef.current)} disabled={thinking || liveGame.isGameOver()}>Recalcular</button></section>
       <section className="card moves-card"><div className="card-title"><strong>Partida</strong><span>{history.length} meios-lances</span></div><div className="move-list">{Array.from({ length: Math.ceil(history.length / 2) }, (_, index) => <div key={index}><b>{index + 1}.</b><button className={viewPly === index * 2 + 1 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 1 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 1)}>{history[index * 2] ?? ''}</button><button className={viewPly === index * 2 + 2 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 2 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 2)}>{history[index * 2 + 1] ?? ''}</button></div>)}{!history.length && <div className="empty-state">Nenhum lance registrado.</div>}</div><div className="move-actions"><button className="review-button" onClick={reviewGame} disabled={!history.length || reviewing}>Analisar lances</button><button onClick={() => downloadText('partida.pgn', liveGame.pgn(), 'application/x-chess-pgn')}>Exportar PGN</button></div></section>
     </aside></section>

@@ -31,7 +31,7 @@ export class StockfishEngine {
   private destroyed = false
 
   constructor() {
-    this.worker = new Worker('/stockfish/stockfish-18-lite-single.js')
+    this.worker = new Worker('/stockfish/stockfish-19-lite-single.js')
     this.worker.onmessage = (event) => this.handleMessage(String(event.data))
     this.worker.onerror = () => {
       const error = new Error('O Web Worker do Stockfish falhou durante a execução.')
@@ -167,6 +167,14 @@ export class StockfishEngine {
 
   private handleMessage(message: string) {
     if (!this.pending) return
+
+    if (message.startsWith('info string CRITICAL ERROR')) {
+      const pending = this.pending
+      this.pending = null
+      window.clearTimeout(pending.timeoutId)
+      pending.reject(new Error(`Stockfish rejeitou a posição ou comando UCI: ${message}`))
+      return
+    }
 
     if (message.startsWith('info ') && message.includes(' pv ')) {
       const multipv = Number(message.match(/\bmultipv (\d+)/)?.[1] ?? '1')

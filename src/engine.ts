@@ -1,8 +1,12 @@
 export type EngineLine = {
   multipv: number
   depth: number
+  selDepth: number | null
   scoreCp: number | null
   mate: number | null
+  nodes: number | null
+  nps: number | null
+  timeMs: number | null
   pv: string[]
 }
 
@@ -260,8 +264,12 @@ export class StockfishEngine {
     if (message.startsWith('info ') && message.includes(' pv ')) {
       const multipv = Number(message.match(/\bmultipv (\d+)/)?.[1] ?? '1')
       const depth = Number(message.match(/\bdepth (\d+)/)?.[1] ?? '0')
+      const selDepthMatch = message.match(/\bseldepth (\d+)/)
       const cpMatch = message.match(/\bscore cp (-?\d+)/)
       const mateMatch = message.match(/\bscore mate (-?\d+)/)
+      const nodesMatch = message.match(/\bnodes (\d+)/)
+      const npsMatch = message.match(/\bnps (\d+)/)
+      const timeMatch = message.match(/\btime (\d+)/)
       const pvRaw = message.split(' pv ')[1] ?? ''
       const sideToMove = this.pending.fen.split(' ')[1]
       const perspective = sideToMove === 'w' ? 1 : -1
@@ -269,8 +277,12 @@ export class StockfishEngine {
       this.pending.lines.set(multipv, {
         multipv,
         depth,
+        selDepth: selDepthMatch ? Number(selDepthMatch[1]) : null,
         scoreCp: cpMatch ? Number(cpMatch[1]) * perspective : null,
         mate: mateMatch ? Number(mateMatch[1]) * perspective : null,
+        nodes: nodesMatch ? Number(nodesMatch[1]) : null,
+        nps: npsMatch ? Number(npsMatch[1]) : null,
+        timeMs: timeMatch ? Number(timeMatch[1]) : null,
         pv: pvRaw.trim().split(/\s+/).filter(Boolean),
       })
       return

@@ -11,7 +11,6 @@ const PIECES: Record<string, string> = {
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
 const ALL_SQUARES = RANKS.flatMap((rank) => FILES.map((file) => `${file}${rank}` as Square))
-const INITIAL_FEN = new Chess().fen()
 const STORAGE_KEY = 'xadrez-dev-session-v2'
 const PROMOTIONS: Array<{ piece: PieceSymbol; label: string }> = [
   { piece: 'q', label: 'Dama' }, { piece: 'r', label: 'Torre' },
@@ -21,6 +20,7 @@ const PROMOTIONS: Array<{ piece: PieceSymbol; label: string }> = [
 type LastMove = { from: Square; to: Square } | null
 type PendingPromotion = { from: Square; to: Square } | null
 type Mode = 'coach' | 'analysis'
+type AnalysisOptions = { mode?: Mode; depth?: number; multiPv?: number }
 type ReviewMove = {
   ply: number
   san: string
@@ -34,7 +34,6 @@ type ReviewMove = {
   fenAfter: string
   ideas: string[]
 }
-
 type SessionSnapshot = {
   pgn: string
   fen: string
@@ -64,7 +63,6 @@ function scoreOf(analysis: EngineAnalysis) {
   if (line.mate !== null) return Math.sign(line.mate) * (10000 - Math.min(99, Math.abs(line.mate)))
   return line.scoreCp ?? 0
 }
-
 function scoreForSide(whiteScore: number, side: Color) { return side === 'w' ? whiteScore : -whiteScore }
 function displayEval(cp: number) {
   if (Math.abs(cp) > 9000) return cp > 0 ? 'M+' : 'M−'
@@ -102,6 +100,7 @@ function gameResult(game: Chess) {
   if (game.isStalemate()) return 'Empate por afogamento.'
   if (game.isThreefoldRepetition()) return 'Empate por repetição tripla.'
   if (game.isInsufficientMaterial()) return 'Empate por material insuficiente.'
+  if (game.isDrawByFiftyMoves()) return 'Empate pela regra dos 50 lances.'
   return 'Partida encerrada em empate.'
 }
 function resultTitle(game: Chess) {
@@ -109,6 +108,7 @@ function resultTitle(game: Chess) {
   if (game.isStalemate()) return 'AFOGAMENTO'
   if (game.isThreefoldRepetition()) return 'REPETIÇÃO TRIPLA'
   if (game.isInsufficientMaterial()) return 'MATERIAL INSUFICIENTE'
+  if (game.isDrawByFiftyMoves()) return 'REGRA DOS 50 LANCES'
   return 'FIM DE PARTIDA'
 }
 function moveToSan(game: Chess, uci: string) {
@@ -134,9 +134,7 @@ function tacticalIdeas(game: Chess, uci: string) {
   return ideas
 }
 function explainMove(game: Chess, uci: string) {
-  const san = moveToSan(game, uci)
-  const ideas = tacticalIdeas(game, uci)
-  return `${san}: ${ideas.join('; ')}.`
+  return `${moveToSan(game, uci)}: ${tacticalIdeas(game, uci).join('; ')}.`
 }
 function pvToSan(fen: string, pv: string[]) {
   const game = new Chess(fen)
@@ -151,10 +149,11 @@ function terminalScore(game: Chess, side: Color) {
   const winner: Color = game.turn() === 'w' ? 'b' : 'w'
   return winner === side ? 10000 : -10000
 }
-function mateMessage(analysis: EngineAnalysis | null, perspective: Color) {
+function mateMessage(analysis: EngineAnalysis | null, perspective: Color, mode: Mode) {
   const mate = analysis?.lines[0]?.mate
   if (mate === null || mate === undefined || mate === 0) return null
   const relative = scoreForSide(mate, perspective)
+  if (mode === 'analysis') return relative > 0 ? `Brancas têm mate em ${Math.abs(relative)}` : `Pretas têm mate em ${Math.abs(relative)}`
   return relative > 0 ? `Você tem mate em ${Math.abs(relative)}` : `Atenção: o adversário ameaça mate em ${Math.abs(relative)}`
 }
 function squareCenter(square: Square, side: Color) {
@@ -166,9 +165,12 @@ function squareCenter(square: Square, side: Color) {
 }
 function gameAtPly(source: Chess, ply: number) {
   const copy = cloneGame(source)
-  const total = copy.history().length
-  for (let index = total; index > ply; index -= 1) copy.undo()
+  for (let index = copy.history().length; index > ply; index -= 1) copy.undo()
   return copy
+}
+function lastMoveOf(game: Chess): LastMove {
+  const latest = game.history({ verbose: true }).at(-1)
+  return latest ? { from: latest.from, to: latest.to } : null
 }
 function downloadText(name: string, content: string, type: string) {
   const blob = new Blob([content], { type })
@@ -223,7 +225,7 @@ export default function App() {
   const perspective: Color = mode === 'analysis' ? 'w' : (playerSide ?? 'w')
   const userEval = analysis ? scoreForSide(scoreOf(analysis), perspective) : 0
   const boardLocked = reviewing || liveGame.isGameOver() || !playerSide || viewPly !== null
-  const mateAlert = mateMessage(analysis, perspective)
+  const mateAlert = mateMessage(analysis, perspective, mode)
   const selectedReview = review.find((row) => row.ply === selectedReviewPly) ?? null
   const puzzles = review.filter((row) => row.label === 'Erro' || row.label === 'Erro grave')
   const activePuzzle = puzzleIndex === null ? null : puzzles[puzzleIndex] ?? null
@@ -244,26 +246,31 @@ export default function App() {
 
   useEffect(() => {
     if (liveGame.isGameOver()) setShowGameOver(true)
-  }, [fen])
+  }, [fen, liveGame])
 
   function commitGame(next: Chess, move: LastMove) {
     gameRef.current = next
     setFen(next.fen())
     setLastMove(move)
+    setAnalysis(null)
+    setThinking(false)
     setSelected(null)
     setPendingPromotion(null)
     setViewPly(null)
     setPuzzleIndex(null)
   }
 
-  async function analyzePosition(position: Chess, side: Color, session: number) {
+  async function analyzePosition(position: Chess, side: Color, session: number, options: AnalysisOptions = {}) {
     const engine = engineRef.current
     if (!engine || position.isGameOver()) { setAnalysis(null); setThinking(false); return }
+    const effectiveMode = options.mode ?? mode
+    const effectiveDepth = options.depth ?? depth
+    const effectiveMultiPv = options.multiPv ?? multiPv
     const expectedFen = position.fen()
     const requestId = ++requestRef.current
-    engine.stop(); setThinking(true); setEngineError(null)
+    engine.stop(); setThinking(true); setEngineError(null); setAnalysis(null)
     try {
-      const response = await engine.analyze(expectedFen, depth, mode === 'analysis' || position.turn() === side ? multiPv : 1)
+      const response = await engine.analyze(expectedFen, effectiveDepth, effectiveMode === 'analysis' || position.turn() === side ? effectiveMultiPv : 1)
       if (requestRef.current !== requestId || sessionRef.current !== session || gameRef.current.fen() !== expectedFen) return
       setAnalysis(response)
     } catch (error) {
@@ -278,7 +285,12 @@ export default function App() {
     gameRef.current = next; setPlayerSide(side); setMode(nextMode); setFen(next.fen())
     setSelected(null); setLastMove(null); setAnalysis(null); setReview([]); setEngineError(null)
     setPendingPromotion(null); setThinking(false); setViewPly(null); setSelectedReviewPly(null); setShowGameOver(false)
-    void analyzePosition(next, side, sessionRef.current)
+    void analyzePosition(next, side, sessionRef.current, { mode: nextMode })
+  }
+
+  function leaveToSetup() {
+    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    setThinking(false); setAnalysis(null); setPlayerSide(null); setShowTools(false); setShowGameOver(false)
   }
 
   function executeMove(from: Square, to: Square, promotion?: PieceSymbol) {
@@ -291,7 +303,7 @@ export default function App() {
     if (!promotion && candidates.some((move) => Boolean(move.promotion))) { setPendingPromotion({ from, to }); return }
     try {
       const move = current.move({ from, to, promotion })
-      requestRef.current += 1; engineRef.current?.stop(); setAnalysis(null); setReview([]); setSelectedReviewPly(null)
+      requestRef.current += 1; engineRef.current?.stop(); setReview([]); setSelectedReviewPly(null)
       commitGame(current, { from: move.from, to: move.to })
       if (playerSide && !current.isGameOver()) void analyzePosition(current, playerSide, sessionRef.current)
     } catch { setSelected(null) }
@@ -318,48 +330,54 @@ export default function App() {
     if (reviewing || !history.length || !playerSide) return
     sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
     const next = cloneGame(gameRef.current); next.undo()
-    const latest = next.history({ verbose: true }).at(-1)
-    commitGame(next, latest ? { from: latest.from, to: latest.to } : null)
-    setAnalysis(null); setReview([]); setEngineError(null); setThinking(false); setShowGameOver(false)
+    commitGame(next, lastMoveOf(next))
+    setReview([]); setEngineError(null); setShowGameOver(false)
     void analyzePosition(next, playerSide, sessionRef.current)
   }
   function resetGame() { if (playerSide) startWithSide(playerSide, mode) }
 
-  function loadPgn() {
-    try {
-      const next = new Chess(); next.loadPgn(importText.trim())
-      sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
-      const latest = next.history({ verbose: true }).at(-1)
-      commitGame(next, latest ? { from: latest.from, to: latest.to } : null)
-      setReview([]); setEngineError(null); setShowTools(false); setShowGameOver(next.isGameOver())
-      if (playerSide && !next.isGameOver()) void analyzePosition(next, playerSide, sessionRef.current)
-    } catch { setEngineError('PGN inválido ou incompatível.') }
+  function replacePosition(next: Chess) {
+    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    commitGame(next, lastMoveOf(next)); setReview([]); setSelectedReviewPly(null); setEngineError(null); setShowTools(false); setShowGameOver(next.isGameOver())
+    if (playerSide && !next.isGameOver()) void analyzePosition(next, playerSide, sessionRef.current)
   }
-  function loadFen() {
-    try {
-      const next = new Chess(importText.trim())
-      sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
-      commitGame(next, null); setReview([]); setEngineError(null); setShowTools(false); setShowGameOver(next.isGameOver())
-      if (playerSide && !next.isGameOver()) void analyzePosition(next, playerSide, sessionRef.current)
-    } catch { setEngineError('FEN inválido.') }
+  function loadPgn() {
+    try { const next = new Chess(); next.loadPgn(importText.trim()); replacePosition(next) }
+    catch { setEngineError('PGN inválido ou incompatível.') }
+  }
+  function loadFenValue(value: string) {
+    try { replacePosition(new Chess(value.trim())) }
+    catch { setEngineError('FEN inválido.') }
+  }
+  function loadFen() { loadFenValue(importText) }
+  function openPuzzlePosition(fenValue: string) {
+    setImportText(fenValue)
+    setShowTools(true)
   }
   function restoreSession() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY); if (!raw) return
       const saved = JSON.parse(raw) as SessionSnapshot
+      if (!saved.side || !['w', 'b'].includes(saved.side) || !['coach', 'analysis'].includes(saved.mode)) throw new Error('Sessão inválida')
+      const restoredDepth = Number.isFinite(saved.depth) ? Math.max(10, Math.min(20, saved.depth)) : 14
+      const restoredMultiPv = Number.isFinite(saved.multiPv) ? Math.max(1, Math.min(5, saved.multiPv)) : 3
       let next = new Chess()
       if (saved.pgn) next.loadPgn(saved.pgn); else next = new Chess(saved.fen)
-      gameRef.current = next; setPlayerSide(saved.side); setMode(saved.mode); setDepth(saved.depth || 14); setMultiPv(saved.multiPv || 3)
-      setFen(next.fen()); setShowGameOver(next.isGameOver()); setLastMove(null)
-      if (!next.isGameOver()) void analyzePosition(next, saved.side, sessionRef.current)
-    } catch { localStorage.removeItem(STORAGE_KEY); setSavedSession(false) }
+      sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+      gameRef.current = next; setPlayerSide(saved.side); setMode(saved.mode); setDepth(restoredDepth); setMultiPv(restoredMultiPv)
+      setFen(next.fen()); setLastMove(lastMoveOf(next)); setAnalysis(null); setThinking(false); setReview([]); setSelectedReviewPly(null); setViewPly(null); setEngineError(null); setShowGameOver(next.isGameOver())
+      if (!next.isGameOver()) void analyzePosition(next, saved.side, sessionRef.current, { mode: saved.mode, depth: restoredDepth, multiPv: restoredMultiPv })
+    } catch {
+      localStorage.removeItem(STORAGE_KEY); setSavedSession(false); setEngineError('A sessão salva estava inválida e foi descartada.')
+    }
   }
 
   async function reviewGame() {
     const engine = engineRef.current; const side = playerSide; const source = cloneGame(gameRef.current)
     if (!engine || !side || !source.history().length || reviewing) return
     requestRef.current += 1; engine.stop(); setThinking(false); setReviewing(true); setReview([]); setEngineError(null)
-    const replay = new Chess(); const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
+    const replay = gameAtPly(source, 0)
+    const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
     try {
       for (let index = 0; index < moves.length; index += 1) {
         const move = moves[index]; const mover = replay.turn(); const actual = `${move.from}${move.to}${move.promotion ?? ''}`
@@ -391,6 +409,7 @@ export default function App() {
       </div>
       <button className="analysis-start" onClick={() => startWithSide('w', 'analysis')}>Modo análise livre · ambos os lados</button>
       {savedSession && <button className="restore-button" onClick={restoreSession}>Restaurar última sessão</button>}
+      {engineError && <div className="error-banner"><strong>Sessão:</strong> {engineError}</div>}
       <div className="setup-note">Sem LLM, API paga ou adversário obrigatório.</div>
     </section></main>
   }
@@ -402,7 +421,7 @@ export default function App() {
 
   return <main className="app-shell">
     <header className="topbar"><div className="brand-block"><div className="brand-mark small">XC</div><div><span className="eyebrow">ANÁLISE LOCAL</span><h1>Xadrez Coach</h1></div></div>
-      <div className="top-actions"><button className="ghost-button" onClick={() => setShowTools(true)}>PGN / FEN</button><button className="ghost-button" onClick={() => setPlayerSide(null)}>Trocar modo</button><div className={`engine-status ${engineError ? 'error' : ''}`}><span className={thinking || reviewing ? 'pulse' : 'dot'} />{engineError ? 'Falha na engine' : reviewing ? 'Revisando partida' : thinking ? 'Calculando' : 'Coach pronto'}</div></div>
+      <div className="top-actions"><button className="ghost-button" onClick={() => setShowTools(true)}>PGN / FEN</button><button className="ghost-button" onClick={leaveToSetup}>Trocar modo</button><div className={`engine-status ${engineError ? 'error' : ''}`}><span className={thinking || reviewing ? 'pulse' : 'dot'} />{engineError ? 'Falha na engine' : reviewing ? 'Revisando partida' : thinking ? 'Calculando' : 'Coach pronto'}</div></div>
     </header>
     {engineError && <div className="error-banner"><strong>Stockfish:</strong> {engineError}</div>}
     {mateAlert && !result && <div className="mate-alert">{mateAlert}</div>}
@@ -442,7 +461,7 @@ export default function App() {
       <div className="eval-chart"><svg viewBox="0 0 600 120" preserveAspectRatio="none"><line x1="0" y1="60" x2="600" y2="60" /><polyline points={review.map((row, index) => `${review.length === 1 ? 300 : index * (600 / (review.length - 1))},${Math.max(5, Math.min(115, 60 - row.eval / 25))}`).join(' ')} /></svg></div>
       <div className="review-grid">{review.map((row) => <button className={`review-row ${selectedReviewPly === row.ply ? 'selected-review' : ''}`} key={row.ply} onClick={() => { setSelectedReviewPly(row.ply); setViewPly(row.ply) }}><div className="move-number">{Math.ceil(row.ply / 2)}{row.ply % 2 === 0 ? '…' : '.'}</div><div><strong>{row.san}</strong><small>{row.actual}</small></div><span className={`quality q-${row.label.toLowerCase().replaceAll(' ', '-')}`}>{row.label}</span><div><small>melhor</small><code>{row.bestSan}</code></div><div><small>perda</small><strong>{row.loss} cp</strong></div><div><small>avaliação</small><strong>{displayEval(row.eval)}</strong></div></button>)}</div>
       {selectedReview && <div className="review-detail"><div><span>Seu lance</span><strong>{selectedReview.san}</strong><code>{selectedReview.actual}</code></div><div className="versus">×</div><div><span>Melhor lance</span><strong>{selectedReview.bestSan}</strong><code>{selectedReview.best}</code></div><p>{selectedReview.ideas.join(' · ')}</p></div>}
-      {puzzles.length > 0 && <div className="puzzle-lab"><div><span className="eyebrow">TREINO DOS SEUS ERROS</span><h3>{puzzles.length} posição(ões) para praticar</h3></div><button onClick={() => { setPuzzleIndex(0); setViewPly(null) }}>Treinar erros</button>{activePuzzle && <div className="puzzle-card"><strong>Encontre a melhor jogada da posição antes de {activePuzzle.san}</strong><code>{activePuzzle.fenBefore}</code><button onClick={() => setImportText(activePuzzle.fenBefore)}>Copiar posição para ferramenta FEN</button><details><summary>Ver solução</summary><b>{activePuzzle.bestSan}</b> · {activePuzzle.ideas.join(', ')}</details><div className="puzzle-nav"><button onClick={() => setPuzzleIndex((value) => Math.max(0, (value ?? 0) - 1))}>Anterior</button><span>{(puzzleIndex ?? 0) + 1}/{puzzles.length}</span><button onClick={() => setPuzzleIndex((value) => Math.min(puzzles.length - 1, (value ?? 0) + 1))}>Próximo</button></div></div>}</div>}
+      {puzzles.length > 0 && <div className="puzzle-lab"><div><span className="eyebrow">TREINO DOS SEUS ERROS</span><h3>{puzzles.length} posição(ões) para praticar</h3></div><button onClick={() => { setPuzzleIndex(0); setViewPly(null) }}>Treinar erros</button>{activePuzzle && <div className="puzzle-card"><strong>Encontre a melhor jogada da posição antes de {activePuzzle.san}</strong><code>{activePuzzle.fenBefore}</code><button onClick={() => openPuzzlePosition(activePuzzle.fenBefore)}>Abrir posição na ferramenta FEN</button><details><summary>Ver solução</summary><b>{activePuzzle.bestSan}</b> · {activePuzzle.ideas.join(', ')}</details><div className="puzzle-nav"><button onClick={() => setPuzzleIndex((value) => Math.max(0, (value ?? 0) - 1))}>Anterior</button><span>{(puzzleIndex ?? 0) + 1}/{puzzles.length}</span><button onClick={() => setPuzzleIndex((value) => Math.min(puzzles.length - 1, (value ?? 0) + 1))}>Próximo</button></div></div>}</div>}
     </section>}
 
     {showGameOver && result && <div className="modal-backdrop"><div className="gameover-modal" role="dialog" aria-modal="true"><span className="section-label">{resultTitle(liveGame)}</span><div className="mate-symbol">{liveGame.isCheckmate() ? '♚' : '½'}</div><h2>{result}</h2><p>Último lance: <strong>{lastSan}</strong></p><div className="gameover-actions"><button onClick={() => setShowGameOver(false)}>Fechar</button><button onClick={() => { setShowGameOver(false); void reviewGame() }}>Revisar partida</button><button className="primary" onClick={resetGame}>Nova partida</button></div></div></div>}

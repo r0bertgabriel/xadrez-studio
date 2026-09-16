@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$ROOT_DIR/.xadrez-dev.pid"
 LOG_FILE="$ROOT_DIR/.xadrez-dev.log"
 PORT="${PORT:-5173}"
+STOCKFISH_JS="$ROOT_DIR/node_modules/stockfish/bin/stockfish-19-lite-single.js"
+STOCKFISH_WASM="$ROOT_DIR/node_modules/stockfish/bin/stockfish-19-lite-single.wasm"
 
 cd "$ROOT_DIR"
 
@@ -28,14 +30,14 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 
-if [[ ! -d node_modules ]]; then
-  echo "Instalando dependências..."
+if [[ ! -d node_modules || ! -f "$STOCKFISH_JS" || ! -f "$STOCKFISH_WASM" ]]; then
+  echo "Instalando/atualizando dependências..."
   npm install
 else
-  echo "Dependências já instaladas."
+  echo "Dependências já instaladas e Stockfish 19 disponível."
 fi
 
-echo "Preparando Stockfish 18..."
+echo "Preparando Stockfish 19..."
 npm run prepare:engine
 
 : > "$LOG_FILE"

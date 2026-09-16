@@ -1,6 +1,6 @@
 # Xadrez Coach
 
-Interface web de estudo e análise assistida por Stockfish 18 executado localmente no navegador. O projeto não usa LLM, API paga ou serviço com cobrança por uso.
+Interface web de estudo e análise assistida por Stockfish 19 executado localmente no navegador. O projeto não usa LLM, API paga ou serviço com cobrança por uso.
 
 ## Modos de uso
 
@@ -42,7 +42,7 @@ O Stockfish acompanha ambos os lados continuamente. É indicado para estudar pos
 - gráfico de avaliação da revisão;
 - comparação interativa entre o lance realizado e o melhor lance;
 - treino das posições em que ocorreram erros ou erros graves;
-- Stockfish 18 em Web Worker/WebAssembly;
+- Stockfish 19 em Web Worker/WebAssembly;
 - interface responsiva para desktop e mobile.
 
 ## Stack
@@ -50,7 +50,7 @@ O Stockfish acompanha ambos os lados continuamente. É indicado para estudar pos
 - React 19 + TypeScript
 - Vite 7
 - `chess.js`
-- Stockfish 18 via pacote `stockfish`
+- Stockfish 19 via pacote `stockfish`
 
 ## Como executar
 
@@ -123,7 +123,7 @@ A sessão atual é persistida apenas no armazenamento local do navegador. PGN e 
 tail -f .xadrez-dev.log
 ```
 
-O cliente do Stockfish possui timeout explícito de inicialização e análise para evitar espera indefinida caso o Web Worker falhe.
+O cliente do Stockfish possui timeout explícito de inicialização e análise para evitar espera indefinida caso o Web Worker falhe. Também trata explicitamente erros críticos de validação UCI/FEN introduzidos no Stockfish 19.
 
 ## Licença
 

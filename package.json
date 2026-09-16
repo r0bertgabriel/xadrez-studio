@@ -1,12 +1,14 @@
 {
   "name": "xadrez-dev",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "prepare:engine": "node scripts/copy-stockfish.mjs",
     "dev": "npm run prepare:engine && vite",
     "build": "npm run prepare:engine && tsc -b && vite build",
+    "test": "node scripts/test-chess-rules.mjs",
+    "check": "npm test && npm run build",
     "preview": "vite preview",
     "postinstall": "npm run prepare:engine"
   },

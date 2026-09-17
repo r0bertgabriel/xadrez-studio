@@ -1,7 +1,8 @@
 import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
+import { tacticalIdeas } from './chess-analysis'
 
 export type BookEntry = { name: string; eco: string; moves: string[] }
-export type Threat = { kind: 'check' | 'capture' | 'hanging'; text: string; from?: Square; to?: Square }
+export type Threat = { kind: 'check' | 'capture' | 'hanging' | 'fork' | 'pin' | 'mate'; text: string; from?: Square; to?: Square }
 export type TacticalInsights = { opportunities: Threat[]; threats: Threat[] }
 
 const BOOK: Record<string, BookEntry> = {
@@ -15,6 +16,7 @@ const BOOK: Record<string, BookEntry> = {
 }
 
 const VALUES: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 99 }
+const ALL_SQUARES = ['a1','b1','c1','d1','e1','f1','g1','h1','a2','b2','c2','d2','e2','f2','g2','h2','a3','b3','c3','d3','e3','f3','g3','h3','a4','b4','c4','d4','e4','f4','g4','h4','a5','b5','c5','d5','e5','f5','g5','h5','a6','b6','c6','d6','e6','f6','g6','h6','a7','b7','c7','d7','e7','f7','g7','h7','a8','b8','c8','d8','e8','f8','g8','h8'] as Square[]
 
 // Halfmove/fullmove and en-passant target do not alter the opening identity.
 export function positionKey(game: Chess) { return game.fen().split(' ').slice(0, 3).join(' ') }
@@ -25,15 +27,34 @@ export function threatsFor(game: Chess): TacticalInsights {
   const enemy: Color = side === 'w' ? 'b' : 'w'
   const opportunities: Threat[] = []
   const threats: Threat[] = []
+
   for (const move of game.moves({ verbose: true })) {
-    if (move.san.includes('#') || move.san.includes('+')) opportunities.push({ kind: 'check', text: `${move.san} cria xeque`, from: move.from, to: move.to })
+    const uci = `${move.from}${move.to}${move.promotion ?? ''}`
+    if (move.san.includes('#')) opportunities.push({ kind: 'mate', text: `${move.san} finaliza com xeque-mate`, from: move.from, to: move.to })
+    else if (move.san.includes('+')) opportunities.push({ kind: 'check', text: `${move.san} cria xeque`, from: move.from, to: move.to })
     if (move.captured && VALUES[move.captured] >= 3) opportunities.push({ kind: 'capture', text: `${move.san} ganha ${move.captured === 'q' ? 'a dama' : 'material'}`, from: move.from, to: move.to })
+
+    const ideas = tacticalIdeas(game, uci)
+    const fork = ideas.find((idea) => idea.startsWith('ataque duplo'))
+    if (fork) opportunities.push({ kind: 'fork', text: `${move.san} cria ${fork}`, from: move.from, to: move.to })
+    if (ideas.includes('cravada absoluta contra o rei')) opportunities.push({ kind: 'pin', text: `${move.san} cria uma cravada absoluta`, from: move.from, to: move.to })
   }
-  for (const square of ['a1','b1','c1','d1','e1','f1','g1','h1','a2','b2','c2','d2','e2','f2','g2','h2','a3','b3','c3','d3','e3','f3','g3','h3','a4','b4','c4','d4','e4','f4','g4','h4','a5','b5','c5','d5','e5','f5','g5','h5','a6','b6','c6','d6','e6','f6','g6','h6','a7','b7','c7','d7','e7','f7','g7','h7','a8','b8','c8','d8','e8','f8','g8','h8'] as Square[]) {
+
+  for (const square of ALL_SQUARES) {
     const piece = game.get(square)
-    if (piece?.color === side && piece.type !== 'k' && game.isAttacked(square, enemy) && !game.isAttacked(square, side)) threats.push({ kind: 'hanging', text: `${square} está sob ataque`, to: square })
+    if (piece?.color !== side || piece.type === 'k') continue
+    const attacked = game.isAttacked(square, enemy)
+    if (!attacked) continue
+    const defended = game.isAttacked(square, side)
+    if (!defended) {
+      threats.push({ kind: 'hanging', text: `${square} está pendurada e sem defesa`, to: square })
+    } else if (VALUES[piece.type] >= 5) {
+      threats.push({ kind: 'capture', text: `${square} está sob ataque; confirme se a defesa é suficiente`, to: square })
+    }
   }
-  return { opportunities: opportunities.slice(0, 4), threats: threats.slice(0, 4) }
+
+  const unique = (items: Threat[]) => items.filter((item, index) => items.findIndex((other) => other.kind === item.kind && other.text === item.text) === index)
+  return { opportunities: unique(opportunities).slice(0, 6), threats: unique(threats).slice(0, 6) }
 }
 
 export function boardSvg(game: Chess, pieceSet: string, theme: { light: string; dark: string }) {

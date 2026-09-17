@@ -6,6 +6,7 @@ const DB_NAME = 'xadrez-dev'
 const DB_VERSION = 2
 const REVIEW_STORE = 'reviews'
 const GAME_STORE = 'games'
+const REVIEW_ALGORITHM_VERSION = 2
 
 export type StoredReview<Row = unknown> = {
   key: string
@@ -30,7 +31,7 @@ export type StoredGame = {
 }
 
 export function reviewCacheKey(signature: string, side: 'w' | 'b', mode: 'coach' | 'analysis', depth: number) {
-  return `${signature}\u0000${side}\u0000${mode}\u0000${depth}`
+  return `review-v${REVIEW_ALGORITHM_VERSION}\u0000${signature}\u0000${side}\u0000${mode}\u0000${depth}`
 }
 
 export function migrateLegacyStorage() {

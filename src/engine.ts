@@ -25,7 +25,12 @@ type Pending = {
   generation: number
 }
 
-const ENGINE_PATH = '/stockfish/stockfish-19-lite-single.js'
+export type StockfishVariant = 'lite' | 'full'
+
+const ENGINE_PATHS: Record<StockfishVariant, string> = {
+  lite: '/stockfish/stockfish-19-lite-single.js',
+  full: '/stockfish/stockfish-19-single.js',
+}
 const ENGINE_READY_TIMEOUT_MS = 12_000
 const ENGINE_SEARCH_TIMEOUT_MS = 30_000
 
@@ -44,8 +49,10 @@ export class StockfishEngine {
   private destroyed = false
   private workerFailed = false
   private analysisGeneration = 0
+  private readonly variant: StockfishVariant
 
-  constructor() {
+  constructor(variant: StockfishVariant = 'lite') {
+    this.variant = variant
     this.worker = this.createWorker()
     this.ready = this.initializeWorker(this.worker)
   }
@@ -98,10 +105,6 @@ export class StockfishEngine {
     if (!this.destroyed && !this.workerFailed) this.worker.postMessage('stop')
   }
 
-  /**
-   * Cancels the active analysis and invalidates already queued analysis jobs.
-   * This prevents stale positions from consuming CPU before the latest request.
-   */
   cancelAnalysis() {
     this.analysisGeneration += 1
     if (!this.destroyed && !this.workerFailed) this.worker.postMessage('stop')
@@ -126,7 +129,7 @@ export class StockfishEngine {
   }
 
   private createWorker() {
-    const worker = new Worker(ENGINE_PATH)
+    const worker = new Worker(ENGINE_PATHS[this.variant])
     worker.onmessage = (event) => this.handleMessage(String(event.data))
     worker.onerror = () => {
       this.markWorkerFailed(new Error('O Web Worker do Stockfish falhou durante a execução.'), worker)

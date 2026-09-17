@@ -14,9 +14,10 @@
   },
   "dependencies": {
     "chess.js": "^1.4.0",
-    "stockfish": "19.0.0",
+    "onnxruntime-web": "^1.30.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "stockfish": "19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.10",

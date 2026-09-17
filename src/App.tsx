@@ -1,6 +1,7 @@
 import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from './components/ChessBoard'
+import CameraAnalysis from './CameraAnalysis'
 import { boardSvg, openingFor, threatsFor } from './chess-tools'
 import { AnalysisCancelledError, type EngineAnalysis } from './engine'
 import { classifyReview, cloneGame, displayEval, evaluationForSide, explainMove, mateMessage, moveToSan, reviewLoss, scoreForSide, scoreOf, tacticalIdeas, terminalEvaluation } from './chess-analysis'
@@ -228,7 +229,7 @@ export default function App() {
   const [manualCircles, setManualCircles] = useState<Square[]>([])
   const [profile, setProfile] = useState<PerformanceProfile>(initialProfile)
   const [lastReviewedSignature, setLastReviewedSignature] = useState<string | null>(null)
-  const [showOpeningTrainer, setShowOpeningTrainer] = useState(false)
+  const [activeArea, setActiveArea] = useState<'play' | 'openings' | 'camera'>('play')
   const [storedGames, setStoredGames] = useState(0)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
@@ -532,13 +533,15 @@ export default function App() {
   const moveNumber = Math.floor(history.length / 2) + 1
 
   const globalTabs = <nav className="global-tabs" aria-label="Navegação principal">
-    <button className={showOpeningTrainer ? '' : 'active'} onClick={() => setShowOpeningTrainer(false)}>Jogar &amp; Analisar</button>
-    <button className={showOpeningTrainer ? 'active' : ''} onClick={() => { cancelAnalysis(); setShowOpeningTrainer(true) }}>Professor de Aberturas</button>
+    <button className={activeArea === 'play' ? 'active' : ''} onClick={() => setActiveArea('play')}>Jogar &amp; Analisar</button>
+    <button className={activeArea === 'openings' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('openings') }}>Professor de Aberturas</button>
+    <button className={activeArea === 'camera' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('camera') }}>Visão por câmera</button>
   </nav>
 
-  if (showOpeningTrainer) {
+  if (activeArea === 'openings') {
     return <>{globalTabs}<OpeningTrainer engine={engine} pieceSet={pieceSet} /></>
   }
+  if (activeArea === 'camera') return <>{globalTabs}<CameraAnalysis /></>
 
   if (!playerSide) {
     return <>{globalTabs}<main className="setup-shell"><section className="setup-card">

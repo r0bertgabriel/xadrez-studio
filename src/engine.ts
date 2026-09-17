@@ -22,11 +22,19 @@ type Pending = {
   lines: Map<number, EngineLine>
   fen: string
   timeoutId: number
+  generation: number
 }
 
 const ENGINE_PATH = '/stockfish/stockfish-19-lite-single.js'
 const ENGINE_READY_TIMEOUT_MS = 12_000
 const ENGINE_SEARCH_TIMEOUT_MS = 30_000
+
+export class AnalysisCancelledError extends Error {
+  constructor() {
+    super('Análise cancelada porque uma posição mais recente foi solicitada.')
+    this.name = 'AnalysisCancelledError'
+  }
+}
 
 export class StockfishEngine {
   private worker: Worker
@@ -35,6 +43,7 @@ export class StockfishEngine {
   private queue: Promise<unknown> = Promise.resolve()
   private destroyed = false
   private workerFailed = false
+  private analysisGeneration = 0
 
   constructor() {
     this.worker = this.createWorker()
@@ -42,29 +51,37 @@ export class StockfishEngine {
   }
 
   analyze(fen: string, depth = 15, multiPv = 3): Promise<EngineAnalysis> {
+    const generation = this.analysisGeneration
     return this.enqueue(async () => {
+      this.ensureCurrentAnalysis(generation)
       await this.ensureReady()
+      this.ensureCurrentAnalysis(generation)
       this.worker.postMessage('stop')
       this.worker.postMessage('setoption name UCI_LimitStrength value false')
       this.worker.postMessage(`setoption name MultiPV value ${Math.max(1, Math.min(5, multiPv))}`)
       await this.waitForReady()
+      this.ensureCurrentAnalysis(generation)
       this.worker.postMessage(`position fen ${fen}`)
-      return this.startSearch(fen, `go depth ${Math.max(1, depth)}`)
+      return this.startSearch(fen, `go depth ${Math.max(1, depth)}`, generation)
     })
   }
 
   bestMove(fen: string, elo = 1500, moveTimeMs = 450): Promise<string> {
+    const generation = this.analysisGeneration
     return this.enqueue(async () => {
+      this.ensureCurrentAnalysis(generation)
       await this.ensureReady()
+      this.ensureCurrentAnalysis(generation)
       this.worker.postMessage('stop')
       this.worker.postMessage('setoption name MultiPV value 1')
       this.worker.postMessage('setoption name UCI_LimitStrength value true')
       this.worker.postMessage(`setoption name UCI_Elo value ${Math.max(1320, Math.min(3190, elo))}`)
       await this.waitForReady()
+      this.ensureCurrentAnalysis(generation)
       this.worker.postMessage(`position fen ${fen}`)
 
       try {
-        const result = await this.startSearch(fen, `go movetime ${Math.max(100, moveTimeMs)}`)
+        const result = await this.startSearch(fen, `go movetime ${Math.max(100, moveTimeMs)}`, generation)
         if (!result.bestMove || result.bestMove === '(none)') {
           throw new Error('Stockfish não retornou um lance válido.')
         }
@@ -81,6 +98,16 @@ export class StockfishEngine {
     if (!this.destroyed && !this.workerFailed) this.worker.postMessage('stop')
   }
 
+  /**
+   * Cancels the active analysis and invalidates already queued analysis jobs.
+   * This prevents stale positions from consuming CPU before the latest request.
+   */
+  cancelAnalysis() {
+    this.analysisGeneration += 1
+    if (!this.destroyed && !this.workerFailed) this.worker.postMessage('stop')
+    this.rejectPending(new AnalysisCancelledError())
+  }
+
   newGame() {
     return this.enqueue(async () => {
       await this.ensureReady()
@@ -93,6 +120,7 @@ export class StockfishEngine {
   destroy() {
     if (this.destroyed) return
     this.destroyed = true
+    this.analysisGeneration += 1
     this.rejectPending(new Error('Engine encerrada.'))
     this.worker.terminate()
   }
@@ -213,17 +241,18 @@ export class StockfishEngine {
     })
   }
 
-  private startSearch(fen: string, command: string): Promise<EngineAnalysis> {
+  private startSearch(fen: string, command: string, generation: number): Promise<EngineAnalysis> {
+    this.ensureCurrentAnalysis(generation)
     return new Promise<EngineAnalysis>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
-        if (!this.pending || this.pending.fen !== fen) return
+        if (!this.pending || this.pending.fen !== fen || this.pending.generation !== generation) return
         this.worker.postMessage('stop')
         const pending = this.pending
         this.pending = null
         pending.reject(new Error('A análise do Stockfish excedeu o tempo limite.'))
       }, ENGINE_SEARCH_TIMEOUT_MS)
 
-      this.pending = { resolve, reject, lines: new Map(), fen, timeoutId }
+      this.pending = { resolve, reject, lines: new Map(), fen, timeoutId, generation }
       this.worker.postMessage(command)
     })
   }
@@ -247,6 +276,11 @@ export class StockfishEngine {
     if (this.destroyed) throw new Error('Stockfish já foi encerrado.')
   }
 
+  private ensureCurrentAnalysis(generation: number) {
+    this.ensureAlive()
+    if (generation !== this.analysisGeneration) throw new AnalysisCancelledError()
+  }
+
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
     const next = this.queue.then(job, job)
     this.queue = next.then(() => undefined, () => undefined)
@@ -260,6 +294,10 @@ export class StockfishEngine {
     }
 
     if (!this.pending) return
+    if (this.pending.generation !== this.analysisGeneration) {
+      this.rejectPending(new AnalysisCancelledError())
+      return
+    }
 
     if (message.startsWith('info ') && message.includes(' pv ')) {
       const multipv = Number(message.match(/\bmultipv (\d+)/)?.[1] ?? '1')

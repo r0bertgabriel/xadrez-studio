@@ -1,11 +1,12 @@
 import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
 import type { EngineAnalysis } from './engine'
 
-const PIECE_VALUES: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 }
+export const PIECE_VALUES: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 }
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const RANKS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+const ALL_SQUARES = RANKS.flatMap((rank) => FILES.map((file) => `${file}${rank}` as Square))
 
-type ReviewEvaluation = { cp: number | null; mate: number | null }
+export type ReviewEvaluation = { cp: number | null; mate: number | null }
 
 export function cloneGame(source: Chess) {
   const clone = new Chess()
@@ -55,7 +56,6 @@ export function terminalEvaluation(game: Chess, side: Color): ReviewEvaluation {
 export function reviewLoss(before: ReviewEvaluation, after: ReviewEvaluation) {
   const beforeMate = before.mate
   const afterMate = after.mate
-
   if (beforeMate !== null && beforeMate > 0) {
     if (afterMate !== null && afterMate > 0) return Math.max(0, Math.abs(afterMate) - Math.abs(beforeMate)) * 10
     if (afterMate !== null && afterMate < 0) return 1000
@@ -70,15 +70,24 @@ export function reviewLoss(before: ReviewEvaluation, after: ReviewEvaluation) {
   return Math.max(0, Math.round((before.cp ?? 0) - (after.cp ?? 0)))
 }
 
+function expectedScore(evaluation: ReviewEvaluation) {
+  if (evaluation.mate !== null) return evaluation.mate > 0 ? 1 : 0
+  const cp = Math.max(-1200, Math.min(1200, evaluation.cp ?? 0))
+  return 1 / (1 + Math.exp(-cp / 260))
+}
+
+/** Context-aware move quality: the same centipawn swing matters more in an equal position than in a decided one. */
 export function classifyReview(loss: number, isBest: boolean, before: ReviewEvaluation, after: ReviewEvaluation) {
   if (isBest) return 'Melhor lance'
   const lostForcedMate = (before.mate ?? 0) > 0 && (after.mate === null || after.mate <= 0)
   const allowedForcedMate = (before.mate === null || before.mate >= 0) && (after.mate ?? 0) < 0
   if (lostForcedMate || allowedForcedMate) return 'Erro grave'
-  if (loss <= 20) return 'Excelente'
-  if (loss <= 55) return 'Bom'
-  if (loss <= 110) return 'Imprecisão'
-  if (loss <= 240) return 'Erro'
+
+  const expectedScoreLoss = Math.max(0, expectedScore(before) - expectedScore(after))
+  if (expectedScoreLoss <= 0.012 && loss <= 45) return 'Excelente'
+  if (expectedScoreLoss <= 0.035 && loss <= 100) return 'Bom'
+  if (expectedScoreLoss <= 0.09) return 'Imprecisão'
+  if (expectedScoreLoss <= 0.22) return 'Erro'
   return 'Erro grave'
 }
 
@@ -93,7 +102,7 @@ function square(file: number, rank: number): Square | null {
   return `${FILES[file]}${RANKS[rank]}` as Square
 }
 
-function attacksFrom(game: Chess, origin: Square): Square[] {
+export function attacksFrom(game: Chess, origin: Square): Square[] {
   const piece = game.get(origin)
   if (!piece) return []
   const file = FILES.indexOf(origin[0] as (typeof FILES)[number])
@@ -126,6 +135,18 @@ function attacksFrom(game: Chess, origin: Square): Square[] {
   return targets
 }
 
+export type HangingPiece = { square: Square; piece: PieceSymbol; value: number }
+export function findHangingPieces(game: Chess, color: Color): HangingPiece[] {
+  const enemy: Color = color === 'w' ? 'b' : 'w'
+  return ALL_SQUARES.flatMap((sq) => {
+    const piece = game.get(sq)
+    if (!piece || piece.color !== color || piece.type === 'k') return []
+    const attacked = game.isAttacked(sq, enemy)
+    const defended = game.isAttacked(sq, color)
+    return attacked && !defended ? [{ square: sq, piece: piece.type, value: PIECE_VALUES[piece.type] }] : []
+  }).sort((a, b) => b.value - a.value)
+}
+
 function forkDescription(game: Chess, movedTo: Square, mover: Color) {
   const valuable = attacksFrom(game, movedTo)
     .map((target) => ({ target, piece: game.get(target) }))
@@ -134,53 +155,86 @@ function forkDescription(game: Chess, movedTo: Square, mover: Color) {
   return `ataque duplo em ${valuable.slice(0, 2).map(({ target }) => target).join(' e ')}`
 }
 
-function createsAbsolutePin(game: Chess, movedTo: Square, mover: Color) {
-  const piece = game.get(movedTo)
-  if (!piece || !['b', 'r', 'q'].includes(piece.type)) return false
+function sliderDirections(piece: PieceSymbol) {
   const directions: Array<[number, number]> = []
-  if (piece.type === 'b' || piece.type === 'q') directions.push([1,1],[1,-1],[-1,1],[-1,-1])
-  if (piece.type === 'r' || piece.type === 'q') directions.push([1,0],[-1,0],[0,1],[0,-1])
-  const file = FILES.indexOf(movedTo[0] as (typeof FILES)[number])
-  const rank = RANKS.indexOf(movedTo[1] as (typeof RANKS)[number])
-  for (const [df, dr] of directions) {
-    let blockerSeen = false
+  if (piece === 'b' || piece === 'q') directions.push([1,1],[1,-1],[-1,1],[-1,-1])
+  if (piece === 'r' || piece === 'q') directions.push([1,0],[-1,0],[0,1],[0,-1])
+  return directions
+}
+
+function rayVictims(game: Chess, origin: Square, mover: Color) {
+  const piece = game.get(origin)
+  if (!piece) return [] as Array<{ first: Square; second: Square; firstValue: number; secondValue: number }>
+  const file = FILES.indexOf(origin[0] as (typeof FILES)[number])
+  const rank = RANKS.indexOf(origin[1] as (typeof RANKS)[number])
+  const pairs: Array<{ first: Square; second: Square; firstValue: number; secondValue: number }> = []
+  for (const [df, dr] of sliderDirections(piece.type)) {
+    const victims: Array<{ square: Square; value: number }> = []
     for (let step = 1; step < 8; step += 1) {
       const target = square(file + df * step, rank + dr * step)
       if (!target) break
       const targetPiece = game.get(target)
       if (!targetPiece) continue
       if (targetPiece.color === mover) break
-      if (!blockerSeen) {
-        if (targetPiece.type === 'k') break
-        blockerSeen = true
-        continue
-      }
-      if (targetPiece.type === 'k') return true
-      break
+      victims.push({ square: target, value: PIECE_VALUES[targetPiece.type] })
+      if (victims.length === 2) break
     }
+    if (victims.length === 2) pairs.push({ first: victims[0].square, second: victims[1].square, firstValue: victims[0].value, secondValue: victims[1].value })
   }
-  return false
+  return pairs
+}
+
+function createsAbsolutePin(game: Chess, movedTo: Square, mover: Color) {
+  return rayVictims(game, movedTo, mover).some(({ second }) => game.get(second)?.type === 'k')
+}
+
+function skewerDescription(game: Chess, movedTo: Square, mover: Color) {
+  const pair = rayVictims(game, movedTo, mover).find(({ firstValue, secondValue }) => firstValue > secondValue)
+  return pair ? `espeto: força ${pair.first} e expõe ${pair.second}` : null
+}
+
+function discoveredAttackDescription(before: Chess, after: Chess, move: Move, mover: Color) {
+  const movedPieceTargets = new Set(attacksFrom(after, move.to))
+  for (const sq of ALL_SQUARES) {
+    const piece = after.get(sq)
+    if (!piece || piece.color === mover || PIECE_VALUES[piece.type] < 3) continue
+    if (!before.isAttacked(sq, mover) && after.isAttacked(sq, mover) && !movedPieceTargets.has(sq)) return `ataque descoberto contra ${sq}`
+  }
+  return null
 }
 
 export function tacticalIdeas(game: Chess, uci: string) {
   if (!uci || uci === '(none)') return []
+  const before = cloneGame(game)
   const probe = cloneGame(game)
   const mover = probe.turn()
+  const enemy: Color = mover === 'w' ? 'b' : 'w'
   let move: Move
   try { move = probe.move(uciToMove(uci)) } catch { return [] }
   const ideas: string[] = []
-  if (move.isCapture()) ideas.push('ganho de material / captura')
-  if (probe.isCheckmate()) ideas.push('xeque-mate')
-  else if (probe.inCheck()) ideas.push('xeque e ganho de tempo')
+  if (move.isCapture()) ideas.push(`captura em ${move.to}${move.captured ? ` (${PIECE_VALUES[move.captured]} ponto(s) de material)` : ''}`)
+  if (probe.isCheckmate()) ideas.push('xeque-mate imediato')
+  else if (probe.inCheck()) ideas.push('xeque com ganho de tempo')
   if (move.isPromotion()) ideas.push('promoção de peão')
-  if (move.isKingsideCastle() || move.isQueensideCastle()) ideas.push('segurança do rei')
-  if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) ideas.push('controle do centro')
-  if (['n', 'b'].includes(move.piece) && ['1', '8'].includes(move.from[1])) ideas.push('desenvolvimento de peça')
+  if (move.isKingsideCastle() || move.isQueensideCastle()) ideas.push('melhora a segurança do rei')
+  if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) ideas.push('aumenta o controle do centro')
+  if (['n', 'b'].includes(move.piece) && ['1', '8'].includes(move.from[1])) ideas.push('desenvolve uma peça menor')
+
   const fork = forkDescription(probe, move.to, mover)
   if (fork) ideas.push(fork)
   if (createsAbsolutePin(probe, move.to, mover)) ideas.push('cravada absoluta contra o rei')
-  if (move.piece === 'q' && move.isCapture()) ideas.push('atividade da dama')
-  if (!ideas.length) ideas.push('coordenação e melhora posicional')
+  const skewer = skewerDescription(probe, move.to, mover)
+  if (skewer) ideas.push(skewer)
+  const discovered = discoveredAttackDescription(before, probe, move, mover)
+  if (discovered) ideas.push(discovered)
+
+  const enemyHanging = findHangingPieces(probe, enemy)
+  if (enemyHanging.length) ideas.push(`deixa ${enemyHanging[0].square} pendurada e sem defesa`)
+  const movedPiece = probe.get(move.to)
+  if (movedPiece && movedPiece.type !== 'k' && probe.isAttacked(move.to, enemy) && !probe.isAttacked(move.to, mover)) ideas.push(`atenção: ${move.to} fica sem defesa`)
+
+  if (move.piece === 'q' && move.isCapture()) ideas.push('ativa a dama com ganho de material')
+  if (!ideas.length) ideas.push('melhora coordenação e atividade das peças')
   return [...new Set(ideas)]
 }
 

@@ -1,7 +1,10 @@
-import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
+import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { boardSvg, openingFor, threatsFor } from './chess-tools'
-import { StockfishEngine, type EngineAnalysis } from './engine'
+import { AnalysisCancelledError, type EngineAnalysis } from './engine'
+import { classifyReview, cloneGame, displayEval, evaluationForSide, explainMove, mateMessage, moveToSan, reviewLoss, scoreForSide, scoreOf, tacticalIdeas, terminalEvaluation } from './chess-analysis'
+import { useChessGame } from './hooks/useChessGame'
+import { useStockfish } from './hooks/useStockfish'
 import OpeningTrainer from './OpeningTrainer'
 import './enhancements.css'
 import './styles.css'
@@ -90,40 +93,6 @@ type SessionSnapshot = {
   multiPv: number
 }
 
-function cloneGame(source: Chess) {
-  const clone = new Chess()
-  const pgn = source.pgn()
-  if (pgn && source.history().length) {
-    clone.loadPgn(pgn)
-    return clone
-  }
-  return new Chess(source.fen())
-}
-
-function uciToMove(uci: string) {
-  return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: (uci[4] || 'q') as PieceSymbol }
-}
-
-function scoreOf(analysis: EngineAnalysis) {
-  const line = analysis.lines[0]
-  if (!line) return 0
-  if (line.mate !== null) return Math.sign(line.mate) * (10000 - Math.min(99, Math.abs(line.mate)))
-  return line.scoreCp ?? 0
-}
-function scoreForSide(whiteScore: number, side: Color) { return side === 'w' ? whiteScore : -whiteScore }
-function displayEval(cp: number) {
-  if (Math.abs(cp) > 9000) return cp > 0 ? 'M+' : 'M−'
-  const pawns = cp / 100
-  return `${pawns >= 0 ? '+' : ''}${pawns.toFixed(1)}`
-}
-function classify(loss: number, isBest: boolean) {
-  if (isBest) return 'Melhor lance'
-  if (loss <= 20) return 'Excelente'
-  if (loss <= 55) return 'Bom'
-  if (loss <= 110) return 'Imprecisão'
-  if (loss <= 240) return 'Erro'
-  return 'Erro grave'
-}
 function displayedSquares(side: Color) {
   const files = side === 'w' ? [...FILES] : [...FILES].reverse()
   const ranks = side === 'w' ? [...RANKS] : [...RANKS].reverse()
@@ -158,50 +127,16 @@ function resultTitle(game: Chess) {
   if (game.isDrawByFiftyMoves()) return 'REGRA DOS 50 LANCES'
   return 'FIM DE PARTIDA'
 }
-function moveToSan(game: Chess, uci: string) {
-  if (!uci || uci === '(none)') return '—'
-  const probe = cloneGame(game)
-  try { return probe.move(uciToMove(uci)).san } catch { return uci }
-}
-function tacticalIdeas(game: Chess, uci: string) {
-  if (!uci || uci === '(none)') return []
-  const probe = cloneGame(game)
-  let move: Move
-  try { move = probe.move(uciToMove(uci)) } catch { return [] }
-  const ideas: string[] = []
-  if (move.isCapture()) ideas.push('ganho de material / captura')
-  if (probe.isCheckmate()) ideas.push('xeque-mate')
-  else if (probe.inCheck()) ideas.push('xeque e ganho de tempo')
-  if (move.isPromotion()) ideas.push('promoção de peão')
-  if (move.isKingsideCastle() || move.isQueensideCastle()) ideas.push('segurança do rei')
-  if (['d4', 'd5', 'e4', 'e5'].includes(move.to)) ideas.push('controle do centro')
-  if (['n', 'b'].includes(move.piece) && ['1', '8'].includes(move.from[1])) ideas.push('desenvolvimento de peça')
-  if (move.piece === 'q' && move.isCapture()) ideas.push('atividade da dama')
-  if (!ideas.length) ideas.push('coordenação e melhora posicional')
-  return ideas
-}
-function explainMove(game: Chess, uci: string) {
-  return `${moveToSan(game, uci)}: ${tacticalIdeas(game, uci).join('; ')}.`
-}
 function pvToSan(fen: string, pv: string[]) {
   const game = new Chess(fen)
   const san: string[] = []
   for (const uci of pv.slice(0, 8)) {
-    try { san.push(game.move(uciToMove(uci)).san) } catch { break }
+    try {
+      const move = { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: (uci[4] || 'q') as PieceSymbol }
+      san.push(game.move(move).san)
+    } catch { break }
   }
   return san.join(' ')
-}
-function terminalScore(game: Chess, side: Color) {
-  if (!game.isGameOver() || !game.isCheckmate()) return 0
-  const winner: Color = game.turn() === 'w' ? 'b' : 'w'
-  return winner === side ? 10000 : -10000
-}
-function mateMessage(analysis: EngineAnalysis | null, perspective: Color, mode: Mode) {
-  const mate = analysis?.lines[0]?.mate
-  if (mate === null || mate === undefined || mate === 0) return null
-  const relative = scoreForSide(mate, perspective)
-  if (mode === 'analysis') return relative > 0 ? `Brancas têm mate em ${Math.abs(relative)}` : `Pretas têm mate em ${Math.abs(relative)}`
-  return relative > 0 ? `Você tem mate em ${Math.abs(relative)}` : `Atenção: o adversário ameaça mate em ${Math.abs(relative)}`
 }
 function squareCenter(square: Square, side: Color) {
   const fileIndex = FILES.indexOf(square[0] as (typeof FILES)[number])
@@ -255,13 +190,12 @@ function downloadBoardPng(svg: string) {
 }
 
 export default function App() {
-  const gameRef = useRef(new Chess())
-  const engineRef = useRef<StockfishEngine | null>(null)
+  const { gameRef, fen, setFen } = useChessGame()
+  const { engineRef, cancelAnalysis } = useStockfish()
   const requestRef = useRef(0)
   const sessionRef = useRef(0)
   const [playerSide, setPlayerSide] = useState<Color | null>(null)
   const [mode, setMode] = useState<Mode>('coach')
-  const [fen, setFen] = useState(gameRef.current.fen())
   const [selected, setSelected] = useState<Square | null>(null)
   const [lastMove, setLastMove] = useState<LastMove>(null)
   const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null)
@@ -316,12 +250,7 @@ export default function App() {
   const opening = useMemo(() => openingFor(liveGame), [liveGame])
   const tacticalInsights = useMemo(() => threatsFor(liveGame), [liveGame])
 
-  useEffect(() => {
-    const engine = new StockfishEngine()
-    engineRef.current = engine
-    setSavedSession(Boolean(localStorage.getItem(STORAGE_KEY)))
-    return () => { requestRef.current += 1; engine.destroy() }
-  }, [])
+  useEffect(() => { setSavedSession(Boolean(localStorage.getItem(STORAGE_KEY))) }, [])
 
   useEffect(() => {
     try {
@@ -369,7 +298,7 @@ export default function App() {
     const snapshot: SessionSnapshot = { pgn: gameRef.current.pgn(), fen: gameRef.current.fen(), side: playerSide, mode, depth, multiPv }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
     setSavedSession(true)
-  }, [fen, playerSide, mode, depth, multiPv])
+  }, [fen, playerSide, mode, depth, multiPv, gameRef])
 
   useEffect(() => {
     if (liveGame.isGameOver()) setShowGameOver(true)
@@ -396,19 +325,20 @@ export default function App() {
     const effectiveMultiPv = options.multiPv ?? multiPv
     const expectedFen = position.fen()
     const requestId = ++requestRef.current
-    engine.stop(); setThinking(true); setEngineError(null); setAnalysis(null)
+    cancelAnalysis(); setThinking(true); setEngineError(null); setAnalysis(null)
     try {
       const response = await engine.analyze(expectedFen, effectiveDepth, effectiveMode === 'analysis' || position.turn() === side ? effectiveMultiPv : 1)
       if (requestRef.current !== requestId || sessionRef.current !== session || gameRef.current.fen() !== expectedFen) return
       setAnalysis(response)
     } catch (error) {
+      if (error instanceof AnalysisCancelledError) return
       if (requestRef.current !== requestId || sessionRef.current !== session) return
       setEngineError(error instanceof Error ? error.message : 'Não foi possível analisar a posição.')
     } finally { if (requestRef.current === requestId) setThinking(false) }
   }
 
   function startWithSide(side: Color, nextMode: Mode = 'coach') {
-    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    sessionRef.current += 1; requestRef.current += 1; cancelAnalysis()
     const next = new Chess()
     gameRef.current = next; setPlayerSide(side); setMode(nextMode); setFen(next.fen())
     setSelected(null); setLastMove(null); setAnalysis(null); setReview([]); setEngineError(null)
@@ -421,7 +351,7 @@ export default function App() {
   }
 
   function leaveToSetup() {
-    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    sessionRef.current += 1; requestRef.current += 1; cancelAnalysis()
     setThinking(false); setAnalysis(null); setPlayerSide(null); setShowTools(false); setShowGameOver(false)
   }
 
@@ -435,7 +365,7 @@ export default function App() {
     if (!promotion && candidates.some((move) => Boolean(move.promotion))) { setPendingPromotion({ from, to }); return }
     try {
       const move = current.move({ from, to, promotion })
-      requestRef.current += 1; engineRef.current?.stop(); setReview([]); setSelectedReviewPly(null)
+      requestRef.current += 1; cancelAnalysis(); setReview([]); setSelectedReviewPly(null)
       commitGame(current, { from: move.from, to: move.to })
       if (playerSide && !current.isGameOver()) void analyzePosition(current, playerSide, sessionRef.current)
     } catch { setSelected(null) }
@@ -445,7 +375,7 @@ export default function App() {
     const current = cloneGame(gameRef.current)
     try {
       const move = current.move(san)
-      requestRef.current += 1; engineRef.current?.stop(); setReview([]); setSelectedReviewPly(null)
+      requestRef.current += 1; cancelAnalysis(); setReview([]); setSelectedReviewPly(null)
       commitGame(current, { from: move.from, to: move.to })
       if (playerSide && !current.isGameOver()) void analyzePosition(current, playerSide, sessionRef.current)
     } catch { setEngineError('Esse lance do livro não está disponível nesta posição.') }
@@ -501,7 +431,7 @@ export default function App() {
   }
   function undoMove() {
     if (reviewing || !history.length || !playerSide) return
-    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    sessionRef.current += 1; requestRef.current += 1; cancelAnalysis()
     const next = cloneGame(gameRef.current); next.undo()
     commitGame(next, lastMoveOf(next))
     setReview([]); setEngineError(null); setShowGameOver(false)
@@ -510,7 +440,7 @@ export default function App() {
   function resetGame() { if (playerSide) startWithSide(playerSide, mode) }
 
   function replacePosition(next: Chess) {
-    sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+    sessionRef.current += 1; requestRef.current += 1; cancelAnalysis()
     commitGame(next, lastMoveOf(next)); setReview([]); setSelectedReviewPly(null); setEngineError(null); setShowTools(false); setShowGameOver(next.isGameOver()); setManualArrows([]); setManualCircles([]); setMarkTool('move'); setLastReviewedSignature(null)
     if (playerSide && !next.isGameOver()) void analyzePosition(next, playerSide, sessionRef.current)
   }
@@ -536,7 +466,7 @@ export default function App() {
       const restoredMultiPv = Number.isFinite(saved.multiPv) ? Math.max(1, Math.min(5, saved.multiPv)) : 3
       let next = new Chess()
       if (saved.pgn) next.loadPgn(saved.pgn); else next = new Chess(saved.fen)
-      sessionRef.current += 1; requestRef.current += 1; engineRef.current?.stop()
+      sessionRef.current += 1; requestRef.current += 1; cancelAnalysis()
       gameRef.current = next; setPlayerSide(saved.side); setMode(saved.mode); setDepth(restoredDepth); setMultiPv(restoredMultiPv)
       setFen(next.fen()); setLastMove(lastMoveOf(next)); setAnalysis(null); setThinking(false); setReview([]); setSelectedReviewPly(null); setViewPly(null); setEngineError(null); setShowGameOver(next.isGameOver())
       if (!next.isGameOver()) void analyzePosition(next, saved.side, sessionRef.current, { mode: saved.mode, depth: restoredDepth, multiPv: restoredMultiPv })
@@ -548,7 +478,7 @@ export default function App() {
   async function reviewGame() {
     const engine = engineRef.current; const side = playerSide; const source = cloneGame(gameRef.current)
     if (!engine || !side || !source.history().length || reviewing) return
-    requestRef.current += 1; engine.stop(); setThinking(false); setReviewing(true); setReview([]); setEngineError(null)
+    requestRef.current += 1; cancelAnalysis(); setThinking(false); setReviewing(true); setReview([]); setEngineError(null)
     const replay = gameAtPly(source, 0)
     const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
     try {
@@ -556,16 +486,20 @@ export default function App() {
         const move = moves[index]; const mover = replay.turn(); const actual = `${move.from}${move.to}${move.promotion ?? ''}`
         if (mover !== side && mode === 'coach') { replay.move({ from: move.from, to: move.to, promotion: move.promotion }); continue }
         const fenBefore = replay.fen(); const before = await engine.analyze(fenBefore, Math.max(10, depth - 3), 1)
-        const best = before.bestMove; const bestSan = moveToSan(replay, best); const beforeScore = scoreForSide(scoreOf(before), mover)
+        const best = before.bestMove; const bestSan = moveToSan(replay, best); const beforeEval = evaluationForSide(before, mover)
         replay.move({ from: move.from, to: move.to, promotion: move.promotion })
-        const afterScore = replay.isGameOver() ? terminalScore(replay, mover) : scoreForSide(scoreOf(await engine.analyze(replay.fen(), Math.max(10, depth - 3), 1)), mover)
-        const loss = Math.max(0, Math.round(beforeScore - afterScore))
-        rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classify(loss, actual === best), eval: afterScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
+        let afterEval
+        if (replay.isGameOver()) afterEval = terminalEvaluation(replay, mover)
+        else afterEval = evaluationForSide(await engine.analyze(replay.fen(), Math.max(10, depth - 3), 1), mover)
+        const loss = reviewLoss(beforeEval, afterEval)
+        const afterScore = afterEval.mate !== null ? Math.sign(afterEval.mate) * (10000 - Math.min(99, Math.abs(afterEval.mate))) : (afterEval.cp ?? 0)
+        rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classifyReview(loss, actual === best, beforeEval, afterEval), eval: afterScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
         setReview([...rows])
       }
       saveProfile(rows)
-    } catch (error) { setEngineError(error instanceof Error ? error.message : 'A revisão não pôde ser concluída.') }
-    finally { setReviewing(false); if (playerSide && !gameRef.current.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current) }
+    } catch (error) {
+      if (!(error instanceof AnalysisCancelledError)) setEngineError(error instanceof Error ? error.message : 'A revisão não pôde ser concluída.')
+    } finally { setReviewing(false); if (playerSide && !gameRef.current.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current) }
   }
 
   const accuracy = review.length ? Math.max(0, Math.round(100 - review.reduce((sum, row) => sum + Math.min(row.loss, 400), 0) / review.length / 4)) : null
@@ -577,7 +511,7 @@ export default function App() {
 
   const globalTabs = <nav className="global-tabs" aria-label="Navegação principal">
     <button className={showOpeningTrainer ? '' : 'active'} onClick={() => setShowOpeningTrainer(false)}>Jogar &amp; Analisar</button>
-    <button className={showOpeningTrainer ? 'active' : ''} onClick={() => { engineRef.current?.stop(); setShowOpeningTrainer(true) }}>Professor de Aberturas</button>
+    <button className={showOpeningTrainer ? 'active' : ''} onClick={() => { cancelAnalysis(); setShowOpeningTrainer(true) }}>Professor de Aberturas</button>
   </nav>
 
   if (showOpeningTrainer) {
@@ -639,7 +573,7 @@ export default function App() {
     <aside className="coach-panel">
       <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? displayEval(userEval) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
       <section className="card opening-card"><div className="card-title"><strong>Abertura</strong><span>{opening?.eco ?? 'fora do livro'}</span></div>{opening ? <><b>{opening.name}</b><div className="book-moves">{opening.moves.map((move) => <button key={move} onClick={() => playBookMove(move)} disabled={boardLocked}>{move}</button>)}</div></> : <p className="empty-state">O livro local não possui uma continuação catalogada nesta posição.</p>}</section>
-      <section className="card opportunities-card"><div className="card-title"><strong>Oportunidades táticas</strong><span>{tacticalInsights.opportunities.length}</span></div>{tacticalInsights.opportunities.length ? <ul>{tacticalInsights.opportunities.map((item, index) => <li className={item.kind} key={`opportunity-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhum xeque ou captura relevante disponível para o lado a jogar.</p>}</section>
+      <section className="card opportunities-card"><div className="card-title"><strong>Oportunidades táticas</strong><span>{tacticalInsights.opportunities.length}</span></div>{tacticalInsights.opportunities.length ? <ul>{tacticalInsights.opportunities.map((item, index) => <li className={item.kind} key={`opportunity-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhum xeque, captura ou padrão tático relevante disponível para o lado a jogar.</p>}</section>
       <section className="card threats-card"><div className="card-title"><strong>Ameaças reais</strong><span>{tacticalInsights.threats.length}</span></div>{tacticalInsights.threats.length ? <ul>{tacticalInsights.threats.map((item, index) => <li className={item.kind} key={`threat-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhuma peça do lado a jogar está sob ameaça real no momento.</p>}</section>
       <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{explainMove(liveGame, bestMove)}</p><div className="idea-tags">{tacticalIdeas(liveGame, bestMove).map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
       <section className="card"><div className="card-title"><strong>Linhas candidatas</strong><span>Top {multiPv}</span></div><div className="lines">{recommendationActive && analysis?.lines.length ? analysis.lines.map((line) => { const score = line.mate !== null ? scoreForSide(Math.sign(line.mate) * 10000, perspective) : scoreForSide(line.scoreCp ?? 0, perspective); return <div className="line" key={line.multipv}><b>{line.multipv}</b><code>{pvToSan(liveGame.fen(), line.pv)}</code><span>{line.mate !== null ? `${score > 0 ? 'M+' : 'M−'}${Math.abs(line.mate)}` : displayEval(score)}</span></div> }) : <div className="empty-state">Sem variantes nesta posição.</div>}</div></section>

@@ -2,6 +2,7 @@ import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'che
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { boardSvg, openingFor, threatsFor } from './chess-tools'
 import { StockfishEngine, type EngineAnalysis } from './engine'
+import OpeningTrainer from './OpeningTrainer'
 import './enhancements.css'
 import './styles.css'
 import './styles/analysis.css'
@@ -214,6 +215,10 @@ function gameAtPly(source: Chess, ply: number) {
   for (let index = copy.history().length; index > ply; index -= 1) copy.undo()
   return copy
 }
+function nextViewPly(value: number | null, historyLength: number): number | null {
+  const next = (value ?? historyLength) + 1
+  return next >= historyLength ? null : next
+}
 function lastMoveOf(game: Chess): LastMove {
   const latest = game.history({ verbose: true }).at(-1)
   return latest ? { from: latest.from, to: latest.to } : null
@@ -286,6 +291,7 @@ export default function App() {
   const [manualCircles, setManualCircles] = useState<Square[]>([])
   const [profile, setProfile] = useState<PerformanceProfile>(initialProfile)
   const [lastReviewedSignature, setLastReviewedSignature] = useState<string | null>(null)
+  const [showOpeningTrainer, setShowOpeningTrainer] = useState(false)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
   const history = liveGame.history()
@@ -308,7 +314,7 @@ export default function App() {
   const puzzles = review.filter((row) => row.label === 'Erro' || row.label === 'Erro grave')
   const activePuzzle = puzzleIndex === null ? null : puzzles[puzzleIndex] ?? null
   const opening = useMemo(() => openingFor(liveGame), [liveGame])
-  const threats = useMemo(() => threatsFor(liveGame), [liveGame])
+  const tacticalInsights = useMemo(() => threatsFor(liveGame), [liveGame])
 
   useEffect(() => {
     const engine = new StockfishEngine()
@@ -351,7 +357,7 @@ export default function App() {
         event.preventDefault(); setViewPly((value) => Math.max(0, (value ?? history.length) - 1))
       }
       if (event.key === 'ArrowRight' && history.length && viewPly !== null) {
-        event.preventDefault(); setViewPly((value) => Math.min(history.length, (value ?? history.length) + 1))
+        event.preventDefault(); setViewPly((value) => nextViewPly(value, history.length))
       }
     }
     window.addEventListener('keydown', handleShortcut)
@@ -569,8 +575,17 @@ export default function App() {
   const activeTurnLabel = liveGame.turn() === 'w' ? 'Brancas' : 'Pretas'
   const moveNumber = Math.floor(history.length / 2) + 1
 
+  const globalTabs = <nav className="global-tabs" aria-label="Navegação principal">
+    <button className={showOpeningTrainer ? '' : 'active'} onClick={() => setShowOpeningTrainer(false)}>Jogar &amp; Analisar</button>
+    <button className={showOpeningTrainer ? 'active' : ''} onClick={() => { engineRef.current?.stop(); setShowOpeningTrainer(true) }}>Professor de Aberturas</button>
+  </nav>
+
+  if (showOpeningTrainer) {
+    return <>{globalTabs}<OpeningTrainer engine={engineRef.current} pieceSet={pieceSet} /></>
+  }
+
   if (!playerSide) {
-    return <main className="setup-shell"><section className="setup-card">
+    return <>{globalTabs}<main className="setup-shell"><section className="setup-card">
       <div className="brand-mark">XS</div><span className="eyebrow">STOCKFISH 19 · LOCAL</span><h1>Xadrez Studio</h1>
       <p>Escolha como quer usar o tabuleiro. Todo o processamento continua local no navegador.</p>
       <div className="side-options">
@@ -581,7 +596,7 @@ export default function App() {
       {savedSession && <button className="restore-button" onClick={restoreSession}>Restaurar última sessão</button>}
       {engineError && <div className="error-banner"><strong>Sessão:</strong> {engineError}</div>}
       <div className="setup-note">Sem LLM, API paga ou adversário obrigatório.</div>
-    </section></main>
+    </section></main></>
   }
 
   const topLabel = orientation === 'w' ? 'Pretas' : 'Brancas'
@@ -589,7 +604,7 @@ export default function App() {
   const arrowFrom = hintFrom ? squareCenter(hintFrom, orientation) : null
   const arrowTo = hintTo ? squareCenter(hintTo, orientation) : null
 
-  return <main className="app-shell">
+  return <>{globalTabs}<main className="app-shell">
     <header className="topbar"><div className="brand-block"><div className="brand-mark small">XS</div><div><span className="eyebrow">ANÁLISE LOCAL</span><h1>Xadrez Studio</h1></div></div>
       <div className="top-actions"><div className="session-meta"><span>PARTIDA</span><b>{mode === 'analysis' ? 'ANÁLISE LIVRE' : `LANCE ${moveNumber}`}</b></div><button className="ghost-button" onClick={() => setPanelCollapsed((value) => !value)}>{panelCollapsed ? 'Mostrar painel' : 'Ocultar painel'}</button><button className="ghost-button" onClick={() => setShowTools(true)}>PGN / FEN</button><button className="ghost-button" onClick={leaveToSetup}>Trocar modo</button><div className={`engine-status ${engineError ? 'error' : ''}`} role="status" aria-live="polite"><span className={thinking || reviewing ? 'pulse' : 'dot'} />{engineError ? 'Falha na engine' : reviewing ? 'Revisando partida' : thinking ? 'Calculando' : 'Engine pronta'}</div></div>
     </header>
@@ -615,7 +630,7 @@ export default function App() {
       </div>
       <div className="player-row my-row"><div><span className="player-dot mine" /><strong>{bottomLabel}</strong></div><span>{mode === 'analysis' ? 'ambos os lados analisados' : (liveGame.turn() === playerSide ? 'sua recomendação está ativa' : 'aguardando o adversário')}</span></div>
       <div className={`turn-banner ${result ? 'finished' : ''}`} aria-live="polite"><div><span className={`turn-chip ${result ? 'finished' : recommendationActive ? 'mine' : 'opponent'}`}>{result ? 'PARTIDA ENCERRADA' : recommendationActive ? 'ANÁLISE ATIVA' : 'AGUARDANDO'}</span><strong>{result ?? (recommendationActive ? `Sua vez: ${activeTurnLabel} jogam.` : `${activeTurnLabel} jogam.`)}</strong></div><span>{viewPly !== null ? `REVISÃO · ${viewPly}/${history.length}` : thinking ? 'ENGINE CALCULANDO' : `LANCE ${moveNumber}`}</span></div>
-      <div className="history-controls" aria-label="Navegação da partida"><button aria-label="Ir para o início" title="Ir para o início" onClick={() => setViewPly(0)} disabled={!history.length}>⏮</button><button aria-label="Lance anterior" title="Lance anterior (←)" onClick={() => setViewPly((value) => Math.max(0, (value ?? history.length) - 1))} disabled={!history.length}>←</button><span>{viewPly === null ? 'POSIÇÃO ATUAL' : `LANCE ${viewPly} DE ${history.length}`}</span><button aria-label="Próximo lance" title="Próximo lance (→)" onClick={() => setViewPly((value) => Math.min(history.length, (value ?? history.length) + 1))} disabled={!history.length || viewPly === null}>→</button><button aria-label="Ir para a posição atual" title="Ir para a posição atual" onClick={() => setViewPly(null)} disabled={viewPly === null}>⏭</button></div>
+      <div className="history-controls" aria-label="Navegação da partida"><button aria-label="Ir para o início" title="Ir para o início" onClick={() => setViewPly(0)} disabled={!history.length}>⏮</button><button aria-label="Lance anterior" title="Lance anterior (←)" onClick={() => setViewPly((value) => Math.max(0, (value ?? history.length) - 1))} disabled={!history.length}>←</button><span>{viewPly === null ? 'POSIÇÃO ATUAL' : `LANCE ${viewPly} DE ${history.length}`}</span><button aria-label="Próximo lance" title="Próximo lance (→)" onClick={() => setViewPly((value) => nextViewPly(value, history.length))} disabled={!history.length || viewPly === null}>→</button><button aria-label="Ir para a posição atual" title="Ir para a posição atual" onClick={() => setViewPly(null)} disabled={viewPly === null}>⏭</button></div>
       <div className="actions"><button onClick={requestReset}>Nova partida</button><button onClick={undoMove} disabled={!history.length || reviewing}>Desfazer lance</button><button className="primary" onClick={() => setShowHint((value) => !value)} title="Atalho: H">{showHint ? 'Ocultar dica' : 'Mostrar dica'} <kbd>H</kbd></button></div>
       <div className="annotation-toolbar"><span>Marcações</span><button className={markTool === 'move' ? 'selected-tool' : ''} onClick={() => { setMarkTool('move'); setManualArrowStart(null) }}>Mover</button><button className={markTool === 'arrow' ? 'selected-tool' : ''} onClick={() => setMarkTool('arrow')}>Seta</button><button className={markTool === 'circle' ? 'selected-tool' : ''} onClick={() => setMarkTool('circle')}>Círculo</button><button onClick={clearAnnotations} disabled={!manualArrows.length && !manualCircles.length}>Limpar</button></div>
       <p className="board-shortcuts"><kbd>←</kbd><kbd>→</kbd> navega pela partida · <kbd>H</kbd> alterna dica · <kbd>Esc</kbd> limpa a seleção</p>
@@ -624,7 +639,8 @@ export default function App() {
     <aside className="coach-panel">
       <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? displayEval(userEval) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
       <section className="card opening-card"><div className="card-title"><strong>Abertura</strong><span>{opening?.eco ?? 'fora do livro'}</span></div>{opening ? <><b>{opening.name}</b><div className="book-moves">{opening.moves.map((move) => <button key={move} onClick={() => playBookMove(move)} disabled={boardLocked}>{move}</button>)}</div></> : <p className="empty-state">O livro local não possui uma continuação catalogada nesta posição.</p>}</section>
-      <section className="card threats-card"><div className="card-title"><strong>Ameaças táticas</strong><span>{threats.length}</span></div>{threats.length ? <ul>{threats.map((threat, index) => <li className={threat.kind} key={`${threat.text}-${index}`}>{threat.text}</li>)}</ul> : <p className="empty-state">Nenhuma ameaça imediata detectada para o lado a jogar.</p>}</section>
+      <section className="card opportunities-card"><div className="card-title"><strong>Oportunidades táticas</strong><span>{tacticalInsights.opportunities.length}</span></div>{tacticalInsights.opportunities.length ? <ul>{tacticalInsights.opportunities.map((item, index) => <li className={item.kind} key={`opportunity-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhum xeque ou captura relevante disponível para o lado a jogar.</p>}</section>
+      <section className="card threats-card"><div className="card-title"><strong>Ameaças reais</strong><span>{tacticalInsights.threats.length}</span></div>{tacticalInsights.threats.length ? <ul>{tacticalInsights.threats.map((item, index) => <li className={item.kind} key={`threat-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhuma peça do lado a jogar está sob ameaça real no momento.</p>}</section>
       <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{explainMove(liveGame, bestMove)}</p><div className="idea-tags">{tacticalIdeas(liveGame, bestMove).map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
       <section className="card"><div className="card-title"><strong>Linhas candidatas</strong><span>Top {multiPv}</span></div><div className="lines">{recommendationActive && analysis?.lines.length ? analysis.lines.map((line) => { const score = line.mate !== null ? scoreForSide(Math.sign(line.mate) * 10000, perspective) : scoreForSide(line.scoreCp ?? 0, perspective); return <div className="line" key={line.multipv}><b>{line.multipv}</b><code>{pvToSan(liveGame.fen(), line.pv)}</code><span>{line.mate !== null ? `${score > 0 ? 'M+' : 'M−'}${Math.abs(line.mate)}` : displayEval(score)}</span></div> }) : <div className="empty-state">Sem variantes nesta posição.</div>}</div></section>
       <section className="card engine-metrics"><div className="card-title"><strong>Telemetria</strong><span>linha principal</span></div>{analysis?.lines[0] ? <div><span><b>Prof.</b> {analysis.lines[0].depth}{analysis.lines[0].selDepth ? `/${analysis.lines[0].selDepth}` : ''}</span><span><b>Nós</b> {analysis.lines[0].nodes?.toLocaleString('pt-BR') ?? '—'}</span><span><b>NPS</b> {analysis.lines[0].nps?.toLocaleString('pt-BR') ?? '—'}</span><span><b>Tempo</b> {analysis.lines[0].timeMs ? `${analysis.lines[0].timeMs} ms` : '—'}</span></div> : <p className="empty-state">Aguardando análise.</p>}</section>
@@ -648,5 +664,5 @@ export default function App() {
     {pendingPromotion && <div className="modal-backdrop" onClick={() => setPendingPromotion(null)}><div className="promotion-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><span className="section-label">PROMOÇÃO</span><h2>Escolha a peça</h2><div className="promotion-grid">{PROMOTIONS.map(({ piece, label }) => <button key={piece} onClick={() => executeMove(pendingPromotion.from, pendingPromotion.to, piece)}><img src={pieceAsset(pieceSet, liveGame.turn(), piece)} alt={label} /><small>{label}</small></button>)}</div></div></div>}
 
     {showTools && <div className="modal-backdrop" onClick={() => setShowTools(false)}><div className="tools-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><span className="section-label">IMPORTAR POSIÇÃO / PARTIDA</span><h2>PGN e FEN</h2><textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Cole um PGN completo ou uma posição FEN..." /><div className="tool-actions"><button onClick={loadPgn}>Carregar PGN</button><button onClick={loadFen}>Carregar FEN</button><button onClick={() => setImportText(liveGame.fen())}>Usar FEN atual</button><button onClick={() => navigator.clipboard?.writeText(liveGame.fen())}>Copiar FEN</button></div><small>A importação substitui a posição atual. A sessão é salva automaticamente no navegador.</small></div></div>}
-  </main>
+  </main></>
 }

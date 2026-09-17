@@ -1,10 +1,12 @@
 import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ChessBoard from './components/ChessBoard'
 import { boardSvg, openingFor, threatsFor } from './chess-tools'
 import { AnalysisCancelledError, type EngineAnalysis } from './engine'
 import { classifyReview, cloneGame, displayEval, evaluationForSide, explainMove, mateMessage, moveToSan, reviewLoss, scoreForSide, scoreOf, tacticalIdeas, terminalEvaluation } from './chess-analysis'
 import { useChessGame } from './hooks/useChessGame'
 import { useStockfish } from './hooks/useStockfish'
+import { countGameHistory, getCachedReview, putCachedReview, putGameHistory, reviewCacheKey } from './persistence'
 import OpeningTrainer from './OpeningTrainer'
 import './enhancements.css'
 import './styles.css'
@@ -171,6 +173,7 @@ function pieceAsset(set: PieceSet, color: Color, piece: PieceSymbol) {
   return `/pieces/${set}/${color}${PIECE_NAMES[piece]}.svg`
 }
 function initialProfile(): PerformanceProfile { return { games: 0, totalAccuracy: 0, white: { games: 0, accuracy: 0 }, black: { games: 0, accuracy: 0 } } }
+function accuracyFor(rows: ReviewMove[]) { return Math.max(0, Math.round(100 - rows.reduce((sum, row) => sum + Math.min(row.loss, 400), 0) / Math.max(1, rows.length) / 4)) }
 function downloadBoardPng(svg: string) {
   const image = new Image()
   const source = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
@@ -191,7 +194,7 @@ function downloadBoardPng(svg: string) {
 
 export default function App() {
   const { gameRef, fen, setFen } = useChessGame()
-  const { engineRef, cancelAnalysis } = useStockfish()
+  const { engine, engineRef, cancelAnalysis } = useStockfish()
   const requestRef = useRef(0)
   const sessionRef = useRef(0)
   const [playerSide, setPlayerSide] = useState<Color | null>(null)
@@ -226,12 +229,12 @@ export default function App() {
   const [profile, setProfile] = useState<PerformanceProfile>(initialProfile)
   const [lastReviewedSignature, setLastReviewedSignature] = useState<string | null>(null)
   const [showOpeningTrainer, setShowOpeningTrainer] = useState(false)
+  const [storedGames, setStoredGames] = useState(0)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
   const history = liveGame.history()
   const displayedGame = useMemo(() => viewPly === null ? liveGame : gameAtPly(liveGame, viewPly), [liveGame, viewPly])
   const orientation = playerSide ?? 'w'
-  const boardSquares = useMemo(() => displayedSquares(orientation), [orientation])
   const checkedKing = findCheckedKing(displayedGame)
   const result = gameResult(liveGame)
   const legalMoves = useMemo(() => selected && viewPly === null ? liveGame.moves({ square: selected, verbose: true }) : [], [liveGame, selected, viewPly])
@@ -250,7 +253,10 @@ export default function App() {
   const opening = useMemo(() => openingFor(liveGame), [liveGame])
   const tacticalInsights = useMemo(() => threatsFor(liveGame), [liveGame])
 
-  useEffect(() => { setSavedSession(Boolean(localStorage.getItem(STORAGE_KEY))) }, [])
+  useEffect(() => {
+    setSavedSession(Boolean(localStorage.getItem(STORAGE_KEY)))
+    void countGameHistory().then(setStoredGames)
+  }, [])
 
   useEffect(() => {
     try {
@@ -318,8 +324,8 @@ export default function App() {
   }
 
   async function analyzePosition(position: Chess, side: Color, session: number, options: AnalysisOptions = {}) {
-    const engine = engineRef.current
-    if (!engine || position.isGameOver()) { setAnalysis(null); setThinking(false); return }
+    const activeEngine = engineRef.current
+    if (!activeEngine || position.isGameOver()) { setAnalysis(null); setThinking(false); return }
     const effectiveMode = options.mode ?? mode
     const effectiveDepth = options.depth ?? depth
     const effectiveMultiPv = options.multiPv ?? multiPv
@@ -327,7 +333,7 @@ export default function App() {
     const requestId = ++requestRef.current
     cancelAnalysis(); setThinking(true); setEngineError(null); setAnalysis(null)
     try {
-      const response = await engine.analyze(expectedFen, effectiveDepth, effectiveMode === 'analysis' || position.turn() === side ? effectiveMultiPv : 1)
+      const response = await activeEngine.analyze(expectedFen, effectiveDepth, effectiveMode === 'analysis' || position.turn() === side ? effectiveMultiPv : 1)
       if (requestRef.current !== requestId || sessionRef.current !== session || gameRef.current.fen() !== expectedFen) return
       setAnalysis(response)
     } catch (error) {
@@ -411,7 +417,7 @@ export default function App() {
     if (!rows.length || !playerSide) return
     const signature = gameRef.current.pgn()
     if (!signature || signature === lastReviewedSignature) return
-    const accuracy = Math.max(0, Math.round(100 - rows.reduce((sum, row) => sum + Math.min(row.loss, 400), 0) / rows.length / 4))
+    const accuracy = accuracyFor(rows)
     setProfile((current) => ({
       games: current.games + 1,
       totalAccuracy: current.totalAccuracy + accuracy,
@@ -476,33 +482,49 @@ export default function App() {
   }
 
   async function reviewGame() {
-    const engine = engineRef.current; const side = playerSide; const source = cloneGame(gameRef.current)
-    if (!engine || !side || !source.history().length || reviewing) return
+    const activeEngine = engineRef.current; const side = playerSide; const source = cloneGame(gameRef.current)
+    if (!activeEngine || !side || !source.history().length || reviewing) return
+    const signature = source.pgn()
+    const reviewDepth = Math.max(10, depth - 3)
+    const cacheKey = reviewCacheKey(signature, side, mode, reviewDepth)
     requestRef.current += 1; cancelAnalysis(); setThinking(false); setReviewing(true); setReview([]); setEngineError(null)
-    const replay = gameAtPly(source, 0)
-    const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
+
     try {
+      const cached = await getCachedReview<ReviewMove>(cacheKey)
+      if (cached?.rows?.length) {
+        setReview(cached.rows)
+        setLastReviewedSignature(signature)
+        setStoredGames(await countGameHistory())
+        return
+      }
+
+      const replay = gameAtPly(source, 0)
+      const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
       for (let index = 0; index < moves.length; index += 1) {
         const move = moves[index]; const mover = replay.turn(); const actual = `${move.from}${move.to}${move.promotion ?? ''}`
         if (mover !== side && mode === 'coach') { replay.move({ from: move.from, to: move.to, promotion: move.promotion }); continue }
-        const fenBefore = replay.fen(); const before = await engine.analyze(fenBefore, Math.max(10, depth - 3), 1)
+        const fenBefore = replay.fen(); const before = await activeEngine.analyze(fenBefore, reviewDepth, 1)
         const best = before.bestMove; const bestSan = moveToSan(replay, best); const beforeEval = evaluationForSide(before, mover)
         replay.move({ from: move.from, to: move.to, promotion: move.promotion })
-        let afterEval
-        if (replay.isGameOver()) afterEval = terminalEvaluation(replay, mover)
-        else afterEval = evaluationForSide(await engine.analyze(replay.fen(), Math.max(10, depth - 3), 1), mover)
+        const afterEval = replay.isGameOver() ? terminalEvaluation(replay, mover) : evaluationForSide(await activeEngine.analyze(replay.fen(), reviewDepth, 1), mover)
         const loss = reviewLoss(beforeEval, afterEval)
         const afterScore = afterEval.mate !== null ? Math.sign(afterEval.mate) * (10000 - Math.min(99, Math.abs(afterEval.mate))) : (afterEval.cp ?? 0)
         rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classifyReview(loss, actual === best, beforeEval, afterEval), eval: afterScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
         setReview([...rows])
       }
+
+      const accuracy = accuracyFor(rows)
+      const now = Date.now()
+      await putCachedReview<ReviewMove>({ key: cacheKey, signature, pgn: signature, side, mode, depth: reviewDepth, accuracy, rows, createdAt: now, updatedAt: now })
+      await putGameHistory({ signature, pgn: signature, side, mode, accuracy, reviewedAt: now })
+      setStoredGames(await countGameHistory())
       saveProfile(rows)
     } catch (error) {
       if (!(error instanceof AnalysisCancelledError)) setEngineError(error instanceof Error ? error.message : 'A revisão não pôde ser concluída.')
     } finally { setReviewing(false); if (playerSide && !gameRef.current.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current) }
   }
 
-  const accuracy = review.length ? Math.max(0, Math.round(100 - review.reduce((sum, row) => sum + Math.min(row.loss, 400), 0) / review.length / 4)) : null
+  const accuracy = review.length ? accuracyFor(review) : null
   const qualityCounts = review.reduce<Record<string, number>>((acc, row) => { acc[row.label] = (acc[row.label] ?? 0) + 1; return acc }, {})
   const bestSan = bestMove ? moveToSan(liveGame, bestMove) : null
   const lastSan = history.at(-1) ?? '—'
@@ -515,7 +537,7 @@ export default function App() {
   </nav>
 
   if (showOpeningTrainer) {
-    return <>{globalTabs}<OpeningTrainer engine={engineRef.current} pieceSet={pieceSet} /></>
+    return <>{globalTabs}<OpeningTrainer engine={engine} pieceSet={pieceSet} /></>
   }
 
   if (!playerSide) {
@@ -548,18 +570,24 @@ export default function App() {
     <section className={`game-layout ${panelCollapsed ? 'panel-collapsed' : ''}`}><div className="board-column">
       <div className="player-row opponent-row"><div><span className="player-dot opponent" /><strong>{topLabel}</strong></div><span>{mode === 'analysis' ? 'análise livre' : 'adversário'}</span></div>
       <div className={`board-frame board-theme-${boardTheme}`}>
-        <div className="board" role="grid" aria-label={`Tabuleiro orientado pelas ${orientation === 'w' ? 'brancas' : 'pretas'}`}>
-          {boardSquares.map((square, index) => {
-            const piece = displayedGame.get(square); const target = legalTargets.has(square); const last = viewPly === null && (lastMove?.from === square || lastMove?.to === square)
-            const hintedFrom = viewPly === null && hintFrom === square; const hintedTo = viewPly === null && hintTo === square; const row = Math.floor(index / 8); const col = index % 8
-            return <button key={square} type="button" className={`square ${isLightSquare(square) ? 'light' : 'dark'} ${selected === square ? 'selected' : ''} ${target ? 'target' : ''} ${last ? 'last-move' : ''} ${checkedKing === square ? (displayedGame.isCheckmate() ? 'checkmated' : 'checked') : ''} ${hintedFrom ? 'hint-from' : ''} ${hintedTo ? 'hint-to' : ''}`} onClick={() => clickSquare(square)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropOnSquare(square, event)} aria-label={square}>
-              {piece && <span className={`piece piece-${pieceSet} ${piece.color}`} draggable={!boardLocked && piece.color === liveGame.turn()} onDragStart={(event) => dragStart(square, event)}><img src={pieceAsset(pieceSet, piece.color, piece.type)} alt={PIECES[`${piece.color}${piece.type}`]} draggable={false} /></span>}
-              {col === 0 && <span className={`coord rank-label ${isLightSquare(square) ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[1]}</span>}{row === 7 && <span className={`coord file-label ${isLightSquare(square) ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[0]}</span>}
-            </button>
-          })}
+        <ChessBoard
+          game={displayedGame}
+          orientation={orientation}
+          pieceSet={pieceSet}
+          ariaLabel={`Tabuleiro orientado pelas ${orientation === 'w' ? 'brancas' : 'pretas'}`}
+          selected={selected}
+          legalTargets={legalTargets}
+          lastMove={viewPly === null ? lastMove : null}
+          classForSquare={(square) => `${checkedKing === square ? (displayedGame.isCheckmate() ? 'checkmated' : 'checked') : ''} ${viewPly === null && hintFrom === square ? 'hint-from' : ''} ${viewPly === null && hintTo === square ? 'hint-to' : ''}`}
+          onSquareClick={clickSquare}
+          draggable={(square) => !boardLocked && displayedGame.get(square)?.color === liveGame.turn()}
+          onDragStart={dragStart}
+          onDrop={dropOnSquare}
+          showCoordinates
+        >
           {arrowFrom && arrowTo && viewPly === null && <svg className={`hint-arrow hint-${hintStyle}`} viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="arrowhead" markerWidth="3.8" markerHeight="3.8" refX="3.2" refY="1.9" orient="auto"><polygon points="0 0, 3.8 1.9, 0 3.8" /></marker></defs><line x1={arrowFrom.x} y1={arrowFrom.y} x2={arrowTo.x} y2={arrowTo.y} markerEnd="url(#arrowhead)" /></svg>}
           {(manualArrows.length > 0 || manualCircles.length > 0) && <svg className="manual-annotations" viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="manual-arrowhead" markerWidth="3.8" markerHeight="3.8" refX="3.2" refY="1.9" orient="auto"><polygon points="0 0, 3.8 1.9, 0 3.8" /></marker></defs>{manualArrows.map((arrow, index) => { const from = squareCenter(arrow.from, orientation); const to = squareCenter(arrow.to, orientation); return <line key={`${arrow.from}-${arrow.to}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} markerEnd="url(#manual-arrowhead)" /> })}{manualCircles.map((square) => { const center = squareCenter(square, orientation); return <circle key={square} cx={center.x} cy={center.y} r="5.2" /> })}</svg>}
-        </div>
+        </ChessBoard>
         {reviewing && <div className="board-overlay"><span className="spinner" /><strong>Analisando seus lances</strong></div>}
       </div>
       <div className="player-row my-row"><div><span className="player-dot mine" /><strong>{bottomLabel}</strong></div><span>{mode === 'analysis' ? 'ambos os lados analisados' : (liveGame.turn() === playerSide ? 'sua recomendação está ativa' : 'aguardando o adversário')}</span></div>
@@ -574,7 +602,7 @@ export default function App() {
       <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? displayEval(userEval) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
       <section className="card opening-card"><div className="card-title"><strong>Abertura</strong><span>{opening?.eco ?? 'fora do livro'}</span></div>{opening ? <><b>{opening.name}</b><div className="book-moves">{opening.moves.map((move) => <button key={move} onClick={() => playBookMove(move)} disabled={boardLocked}>{move}</button>)}</div></> : <p className="empty-state">O livro local não possui uma continuação catalogada nesta posição.</p>}</section>
       <section className="card opportunities-card"><div className="card-title"><strong>Oportunidades táticas</strong><span>{tacticalInsights.opportunities.length}</span></div>{tacticalInsights.opportunities.length ? <ul>{tacticalInsights.opportunities.map((item, index) => <li className={item.kind} key={`opportunity-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhum xeque, captura ou padrão tático relevante disponível para o lado a jogar.</p>}</section>
-      <section className="card threats-card"><div className="card-title"><strong>Ameaças reais</strong><span>{tacticalInsights.threats.length}</span></div>{tacticalInsights.threats.length ? <ul>{tacticalInsights.threats.map((item, index) => <li className={item.kind} key={`threat-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhuma peça do lado a jogar está sob ameaça real no momento.</p>}</section>
+      <section className="card threats-card"><div className="card-title"><strong>Ameaças reais</strong><span>{tacticalInsights.threats.length}</span></div>{tacticalInsights.threats.length ? <ul>{tacticalInsights.threats.map((item, index) => <li className={item.kind} key={`threat-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhuma peça do lado a jogar está pendurada no momento.</p>}</section>
       <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{explainMove(liveGame, bestMove)}</p><div className="idea-tags">{tacticalIdeas(liveGame, bestMove).map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
       <section className="card"><div className="card-title"><strong>Linhas candidatas</strong><span>Top {multiPv}</span></div><div className="lines">{recommendationActive && analysis?.lines.length ? analysis.lines.map((line) => { const score = line.mate !== null ? scoreForSide(Math.sign(line.mate) * 10000, perspective) : scoreForSide(line.scoreCp ?? 0, perspective); return <div className="line" key={line.multipv}><b>{line.multipv}</b><code>{pvToSan(liveGame.fen(), line.pv)}</code><span>{line.mate !== null ? `${score > 0 ? 'M+' : 'M−'}${Math.abs(line.mate)}` : displayEval(score)}</span></div> }) : <div className="empty-state">Sem variantes nesta posição.</div>}</div></section>
       <section className="card engine-metrics"><div className="card-title"><strong>Telemetria</strong><span>linha principal</span></div>{analysis?.lines[0] ? <div><span><b>Prof.</b> {analysis.lines[0].depth}{analysis.lines[0].selDepth ? `/${analysis.lines[0].selDepth}` : ''}</span><span><b>Nós</b> {analysis.lines[0].nodes?.toLocaleString('pt-BR') ?? '—'}</span><span><b>NPS</b> {analysis.lines[0].nps?.toLocaleString('pt-BR') ?? '—'}</span><span><b>Tempo</b> {analysis.lines[0].timeMs ? `${analysis.lines[0].timeMs} ms` : '—'}</span></div> : <p className="empty-state">Aguardando análise.</p>}</section>
@@ -582,7 +610,7 @@ export default function App() {
       <section className="card engine-settings"><div className="card-title"><strong>Força da análise</strong><span>local</span></div><label>Profundidade <b>{depth}</b><input type="range" min="10" max="20" value={depth} onChange={(e) => setDepth(Number(e.target.value))} /></label><label>Variantes <b>{multiPv}</b><input type="range" min="1" max="5" value={multiPv} onChange={(e) => setMultiPv(Number(e.target.value))} /></label><button onClick={() => analyzePosition(liveGame, playerSide, sessionRef.current)} disabled={thinking || liveGame.isGameOver()}>Recalcular</button></section>
       <section className="card moves-card"><div className="card-title"><strong>Partida</strong><span>{history.length} meios-lances</span></div><div className="move-list">{Array.from({ length: Math.ceil(history.length / 2) }, (_, index) => <div key={index}><b>{index + 1}.</b><button className={viewPly === index * 2 + 1 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 1 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 1)}>{history[index * 2] ?? ''}</button><button className={viewPly === index * 2 + 2 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 2 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 2)}>{history[index * 2 + 1] ?? ''}</button></div>)}{!history.length && <div className="empty-state">Nenhum lance registrado.</div>}</div><div className="move-actions"><button className="review-button" onClick={reviewGame} disabled={!history.length || reviewing}>Analisar lances</button><button onClick={() => downloadText('partida.pgn', liveGame.pgn(), 'application/x-chess-pgn')}>Exportar PGN</button></div></section>
       <section className="card export-card"><div className="card-title"><strong>Exportar posição</strong><span>tema atual</span></div><div className="move-actions"><button onClick={() => downloadText('posicao.svg', boardSvg(liveGame, pieceSet, EXPORT_THEME_COLORS[boardTheme]), 'image/svg+xml')}>SVG</button><button onClick={() => downloadBoardPng(boardSvg(liveGame, pieceSet, EXPORT_THEME_COLORS[boardTheme]))}>PNG</button></div></section>
-      <section className="card profile-card"><div className="card-title"><strong>Seu desempenho</strong><span>{profile.games} revisão(ões)</span></div>{profile.games ? <div><strong>{Math.round(profile.totalAccuracy / profile.games)}%</strong><span>média geral</span><small>Brancas: {profile.white.games ? `${Math.round(profile.white.accuracy / profile.white.games)}%` : '—'} · Pretas: {profile.black.games ? `${Math.round(profile.black.accuracy / profile.black.games)}%` : '—'}</small></div> : <p className="empty-state">Analise uma partida para começar seu histórico local.</p>}</section>
+      <section className="card profile-card"><div className="card-title"><strong>Seu desempenho</strong><span>{storedGames} partida(s) no IndexedDB</span></div>{profile.games ? <div><strong>{Math.round(profile.totalAccuracy / profile.games)}%</strong><span>média geral</span><small>Brancas: {profile.white.games ? `${Math.round(profile.white.accuracy / profile.white.games)}%` : '—'} · Pretas: {profile.black.games ? `${Math.round(profile.black.accuracy / profile.black.games)}%` : '—'} · {profile.games} revisão(ões)</small></div> : <p className="empty-state">Analise uma partida para começar seu histórico local.</p>}</section>
     </aside></section>
 
     {review.length > 0 && <section className="review-section"><div className="review-header"><div><span className="eyebrow">PÓS-PARTIDA</span><h2>Revisão interativa</h2></div><div className="accuracy"><span>Precisão estimada</span><strong>{accuracy}%</strong></div></div>

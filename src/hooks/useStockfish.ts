@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { StockfishEngine } from '../engine'
 
 /** Keeps the Stockfish worker lifecycle out of presentation components. */
 export function useStockfish() {
   const engineRef = useRef<StockfishEngine | null>(null)
+  const [engine, setEngine] = useState<StockfishEngine | null>(null)
 
   useEffect(() => {
-    const engine = new StockfishEngine()
-    engineRef.current = engine
+    const instance = new StockfishEngine()
+    engineRef.current = instance
+    setEngine(instance)
     return () => {
-      engine.cancelAnalysis()
-      engine.destroy()
+      instance.cancelAnalysis()
+      instance.destroy()
       engineRef.current = null
     }
   }, [])
@@ -19,5 +21,5 @@ export function useStockfish() {
     engineRef.current?.cancelAnalysis()
   }, [])
 
-  return { engineRef, cancelAnalysis }
+  return { engine, engineRef, cancelAnalysis }
 }

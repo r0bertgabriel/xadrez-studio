@@ -1,0 +1,40 @@
+/* Responsive analysis layout: keep the board primary and make dense analytics progressively collapsible. */
+@media (max-width: 1180px) {
+  .game-layout { grid-template-columns: minmax(0, 1fr) minmax(300px, 38vw); gap: 18px; }
+  .coach-panel { min-width: 0; }
+  .engine-metrics > div:last-child { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-row { grid-template-columns: 42px minmax(90px, 1fr) minmax(90px, auto) minmax(90px, 1fr); }
+  .review-row > div:nth-last-child(-n+2) { display: none; }
+}
+
+@media (max-width: 900px) {
+  .topbar { align-items: flex-start; gap: 12px; }
+  .top-actions { width: 100%; overflow-x: auto; padding-bottom: 4px; }
+  .game-layout, .game-layout.panel-collapsed { display: flex; flex-direction: column; }
+  .board-column { width: min(100%, 720px); margin-inline: auto; }
+  .coach-panel { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .coach-panel > .eval-card, .coach-panel > .recommendation-card, .coach-panel > .moves-card { grid-column: 1 / -1; }
+  .review-section { padding-inline: 14px; }
+  .review-grid { overflow-x: auto; }
+  .review-row { min-width: 620px; }
+  .trainer-layout { grid-template-columns: 1fr; }
+  .trainer-sidebar { max-height: 240px; }
+  .trainer-board-column { width: min(100%, 720px); margin-inline: auto; }
+}
+
+@media (max-width: 620px) {
+  .app-shell, .trainer-shell { padding-inline: 10px; }
+  .topbar, .trainer-topbar { padding-inline: 2px; }
+  .session-meta { display: none; }
+  .coach-panel { display: flex; flex-direction: column; }
+  .player-row, .turn-banner { font-size: .9rem; }
+  .history-controls { gap: 4px; }
+  .history-controls span { min-width: 0; flex: 1; text-align: center; font-size: .78rem; }
+  .actions, .annotation-toolbar { flex-wrap: wrap; }
+  .review-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .quality-summary { overflow-x: auto; flex-wrap: nowrap; }
+  .eval-chart { overflow-x: auto; }
+  .eval-chart svg { min-width: 560px; }
+  .trainer-controls, .trainer-mode-toggle, .trainer-side-toggle { flex-wrap: wrap; }
+  .tools-modal, .promotion-modal, .gameover-modal { width: min(94vw, 560px); max-height: 90vh; overflow-y: auto; }
+}

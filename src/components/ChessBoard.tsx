@@ -1,5 +1,5 @@
 import { type Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
-import type { ReactNode } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
@@ -35,14 +35,14 @@ type Props = {
   classForSquare?: (square: Square) => string
   onSquareClick?: (square: Square) => void
   draggable?: (square: Square) => boolean
-  onDragStart?: (square: Square, event: React.DragEvent) => void
-  onDrop?: (square: Square, event: React.DragEvent) => void
+  onDragStart?: (square: Square, event: DragEvent) => void
+  onDrop?: (square: Square, event: DragEvent) => void
   showCoordinates?: boolean
   children?: ReactNode
 }
 
 export default function ChessBoard({
-  game, orientation, pieceSet, ariaLabel, selected = null, legalTargets = new Set(), lastMove = null,
+  game, orientation, pieceSet, ariaLabel, selected = null, legalTargets = new Set<Square>(), lastMove = null,
   classForSquare, onSquareClick, draggable, onDragStart, onDrop, showCoordinates = false, children,
 }: Props) {
   const squares = displayedSquares(orientation)

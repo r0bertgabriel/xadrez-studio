@@ -7,7 +7,7 @@
     "prepare:engine": "node scripts/copy-stockfish.mjs",
     "dev": "npm run prepare:engine && vite",
     "build": "npm run prepare:engine && tsc -b && vite build",
-    "test": "node scripts/test-chess-rules.mjs",
+    "test": "node scripts/test-chess-rules.mjs && node scripts/test-training-data.mjs",
     "check": "npm test && npm run build",
     "preview": "vite preview",
     "postinstall": "npm run prepare:engine"

@@ -1,5 +1,5 @@
 import { Chess, type PieceSymbol, type Square } from 'chess.js'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from './components/ChessBoard'
 import { openingFor } from './chess-tools'
 import {
@@ -99,6 +99,7 @@ function TrainingBoard({
   const [selected, setSelected] = useState<Square | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [graded, setGraded] = useState(false)
+  const gradedRef = useRef(false)
   const [solved, setSolved] = useState(false)
   const [hintLevel, setHintLevel] = useState(0)
   const legalTargets = useMemo(() => selected ? new Set(game.moves({ square: selected, verbose: true }).map((move) => move.to)) : new Set<Square>(), [game, selected])
@@ -108,6 +109,7 @@ function TrainingBoard({
     setSelected(null)
     setFeedback(null)
     setGraded(false)
+    gradedRef.current = false
     setSolved(false)
     setHintLevel(0)
   }, [position.id, position.fen])
@@ -119,7 +121,8 @@ function TrainingBoard({
   }, [solved, onSolved])
 
   function grade(success: boolean) {
-    if (graded) return
+    if (gradedRef.current) return
+    gradedRef.current = true
     setGraded(true)
     onGrade(success)
   }

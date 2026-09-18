@@ -98,7 +98,6 @@ function TrainingBoard({
   const [game, setGame] = useState(() => new Chess(position.fen))
   const [selected, setSelected] = useState<Square | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
-  const [graded, setGraded] = useState(false)
   const gradedRef = useRef(false)
   const [solved, setSolved] = useState(false)
   const [hintLevel, setHintLevel] = useState(0)
@@ -108,7 +107,6 @@ function TrainingBoard({
     setGame(new Chess(position.fen))
     setSelected(null)
     setFeedback(null)
-    setGraded(false)
     gradedRef.current = false
     setSolved(false)
     setHintLevel(0)
@@ -123,7 +121,6 @@ function TrainingBoard({
   function grade(success: boolean) {
     if (gradedRef.current) return
     gradedRef.current = true
-    setGraded(true)
     onGrade(success)
   }
 

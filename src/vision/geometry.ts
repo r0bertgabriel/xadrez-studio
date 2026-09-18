@@ -7,7 +7,7 @@ export function validCorners(points: Point[]) {
   if (points.length !== 4 || points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false
   if (new Set(points.map((p) => `${p.x}:${p.y}`)).size !== 4) return false
   const signs = [cross(points[0], points[1], points[2]), cross(points[1], points[2], points[3]), cross(points[2], points[3], points[0]), cross(points[3], points[0], points[1])]
-  return signs.every((value) => Math.abs(value) > 0.001) && signs.every((value) => value > 0) || signs.every((value) => value < 0)
+  return signs.every((value) => Math.abs(value) > 0.001) && (signs.every((value) => value > 0) || signs.every((value) => value < 0))
 }
 export function squareAt(row: number, col: number, orientation: Color): Square {
   const file = orientation === 'w' ? FILES[col] : FILES[7-col]

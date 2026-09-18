@@ -235,7 +235,15 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
     return b.loss - a.loss
   }), [errors, progressMap, clock])
 
-  const baseList: TrainingPosition[] = area === 'focus' ? focusQueue : area === 'errors' ? orderedErrors : area === 'tactics' ? TACTICAL_POSITIONS : area === 'endgames' ? ENDGAME_POSITIONS : []
+  // Frozen per area visit: focusQueue/orderedErrors depend on progress, which changes after every
+  // grade. Recomputing baseList live would remove/reorder the just-answered item and shift the
+  // index, skipping the next exercise. Snapshotting on area change keeps the session stable.
+  const sessionList = useMemo(() => {
+    if (area === 'focus') return focusQueue
+    if (area === 'errors') return orderedErrors
+    return []
+  }, [area])
+  const baseList: TrainingPosition[] = area === 'focus' || area === 'errors' ? sessionList : area === 'tactics' ? TACTICAL_POSITIONS : area === 'endgames' ? ENDGAME_POSITIONS : []
   const themes = useMemo(() => [...new Set(baseList.map((item) => item.theme))].sort(), [area, errors.length])
   const currentList = themeFilter === 'all' || area === 'focus' || area === 'errors' ? baseList : baseList.filter((item) => item.theme === themeFilter)
   const current = currentList.length ? currentList[index % currentList.length] : null

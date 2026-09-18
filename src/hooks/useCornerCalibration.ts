@@ -1,5 +1,5 @@
 import { useCallback, useState, type MouseEvent } from 'react'
-import { validCorners } from '../vision/geometry'
+import { orderCorners, validCorners } from '../vision/geometry'
 import type { Point } from '../vision/types'
 
 /** Lets the user click the four corners of a board inside a video overlay to calibrate a perspective grid. */
@@ -11,5 +11,7 @@ export function useCornerCalibration() {
     setCorners((current) => (current.length === 4 ? [point] : [...current, point]))
   }, [])
   const reset = useCallback(() => setCorners([]), [])
-  return { corners, addCorner, reset, calibrated: validCorners(corners) }
+  const calibrated = validCorners(corners)
+  const quad = calibrated ? orderCorners(corners) : null
+  return { corners, addCorner, reset, calibrated, quad }
 }

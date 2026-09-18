@@ -3,10 +3,22 @@ import type { Point } from './types'
 
 const FILES = ['a','b','c','d','e','f','g','h'] as const
 function cross(a: Point, b: Point, c: Point) { return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x) }
+/**
+ * Reorders 4 arbitrarily-clicked points into [top-left, top-right, bottom-right, bottom-left],
+ * regardless of the order the user actually clicked them in. Users are told a click order to
+ * follow, but small deviations from it (or from a perfectly convex click) are common and
+ * shouldn't fail calibration — only the 4 approximate corner positions matter.
+ */
+export function orderCorners(points: Point[]): [Point, Point, Point, Point] {
+  const bySum = [...points].sort((a, b) => (a.x + a.y) - (b.x + b.y))
+  const byDiff = [...points].sort((a, b) => (a.x - a.y) - (b.x - b.y))
+  return [bySum[0], byDiff[3], bySum[3], byDiff[0]]
+}
 export function validCorners(points: Point[]) {
   if (points.length !== 4 || points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false
   if (new Set(points.map((p) => `${p.x}:${p.y}`)).size !== 4) return false
-  const signs = [cross(points[0], points[1], points[2]), cross(points[1], points[2], points[3]), cross(points[2], points[3], points[0]), cross(points[3], points[0], points[1])]
+  const [tl, tr, br, bl] = orderCorners(points)
+  const signs = [cross(tl, tr, br), cross(tr, br, bl), cross(br, bl, tl), cross(bl, tl, tr)]
   return signs.every((value) => Math.abs(value) > 0.001) && (signs.every((value) => value > 0) || signs.every((value) => value < 0))
 }
 export function squareAt(row: number, col: number, orientation: Color): Square {

@@ -33,7 +33,7 @@ function squarePoint(corners: [Point, Point, Point, Point], square: Square, orie
 
 export default function ScreenAnalysis({ engine, pieceSet }: { engine: StockfishEngine | null; pieceSet: string }) {
   const { state: captureState, stream, start: startCapture, stop: stopCapture } = useScreenCapture()
-  const { corners, addCorner, reset: resetCorners, calibrated } = useCornerCalibration()
+  const { corners, addCorner, reset: resetCorners, calibrated, quad } = useCornerCalibration()
   const [orientation, setOrientation] = useState<Color>('w')
   const [tracking, setTracking] = useState(false)
   const [fen, setFen] = useState(new Chess().fen())
@@ -104,13 +104,13 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
   function startTracking() {
     const context = canvasRef.current?.getContext('2d')
     const video = videoRef.current
-    if (!context || !video || !calibrated) return
+    if (!context || !video || !calibrated || !quad) return
     canvasRef.current!.width = video.videoWidth || 640
     canvasRef.current!.height = video.videoHeight || 640
     context.drawImage(video, 0, 0, canvasRef.current!.width, canvasRef.current!.height)
     gameRef.current = new Chess()
     historyRef.current = []
-    baselineRef.current = sampleBoardSignature(context, corners as [Point, Point, Point, Point], orientation)
+    baselineRef.current = sampleBoardSignature(context, quad, orientation)
     resetTrackerState()
     setFen(gameRef.current.fen())
     setLastMove(null)
@@ -153,9 +153,9 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
     const timer = window.setInterval(() => {
       const context = canvasRef.current?.getContext('2d')
       const video = videoRef.current
-      if (!context || !video || video.readyState < 2) return
+      if (!context || !video || video.readyState < 2 || !quad) return
       context.drawImage(video, 0, 0, canvasRef.current!.width, canvasRef.current!.height)
-      const sample = sampleBoardSignature(context, corners as [Point, Point, Point, Point], orientation)
+      const sample = sampleBoardSignature(context, quad, orientation)
       lastSampleRef.current = sample
       if (!baselineRef.current) { baselineRef.current = sample; return }
       if (ambiguous || unresolved) return
@@ -178,7 +178,7 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
       setStatus('Não foi possível identificar o lance automaticamente. Confirme manualmente abaixo.')
     }, SAMPLE_INTERVAL_MS)
     return () => window.clearInterval(timer)
-  }, [tracking, corners, orientation, ambiguous, unresolved])
+  }, [tracking, quad, orientation, ambiguous, unresolved])
 
   const promotionGroup = ambiguous && ambiguous.every((m) => m.move.from === ambiguous[0].move.from && m.move.to === ambiguous[0].move.to && m.move.promotion) ? ambiguous : null
   const genericAmbiguous = ambiguous && !promotionGroup ? ambiguous : null
@@ -186,11 +186,11 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
 
   const bestMove = analysis?.bestMove
   const bestSan = bestMove ? moveToSan(gameRef.current, bestMove) : null
-  const arrowFrom = bestMove && tracking ? squarePoint(corners as [Point, Point, Point, Point], bestMove.slice(0, 2) as Square, orientation) : null
-  const arrowTo = bestMove && tracking ? squarePoint(corners as [Point, Point, Point, Point], bestMove.slice(2, 4) as Square, orientation) : null
-  const lastMoveCells = lastMove ? [lastMove.from, lastMove.to].map((square) => {
+  const arrowFrom = bestMove && tracking && quad ? squarePoint(quad, bestMove.slice(0, 2) as Square, orientation) : null
+  const arrowTo = bestMove && tracking && quad ? squarePoint(quad, bestMove.slice(2, 4) as Square, orientation) : null
+  const lastMoveCells = lastMove && quad ? [lastMove.from, lastMove.to].map((square) => {
     const { row, col } = squareRowCol(square, orientation)
-    return cellCorners(corners as [Point, Point, Point, Point], row, col)
+    return cellCorners(quad, row, col)
   }) : []
 
   const captureMessage: Record<string, string> = {
@@ -203,8 +203,8 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
       <div className="screen-stage" style={aspectRatio ? { aspectRatio } : undefined} onClick={!calibrated ? addCorner : undefined}>
         <video ref={videoRef} autoPlay muted playsInline />
         {!calibrated && corners.map((point, index) => <i className="camera-point" key={index} style={{ left: `${point.x}%`, top: `${point.y}%` }} />)}
-        {calibrated && <svg viewBox="0 0 100 100" className="camera-grid">
-          {gridLines(corners as [Point, Point, Point, Point]).flatMap((line, index) => [
+        {calibrated && quad && <svg viewBox="0 0 100 100" className="camera-grid">
+          {gridLines(quad).flatMap((line, index) => [
             <line key={`v${index}`} x1={line.a.x} y1={line.a.y} x2={line.b.x} y2={line.b.y} />,
             <line key={`h${index}`} x1={line.c.x} y1={line.c.y} x2={line.d.x} y2={line.d.y} />,
           ])}

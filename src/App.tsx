@@ -9,6 +9,7 @@ import { useChessGame } from './hooks/useChessGame'
 import { useStockfish } from './hooks/useStockfish'
 import { countGameHistory, getCachedReview, putCachedReview, putGameHistory, reviewCacheKey } from './persistence'
 import OpeningTrainer from './OpeningTrainer'
+import ScreenAnalysis from './ScreenAnalysis'
 import TrainingHub from './TrainingHub'
 import './enhancements.css'
 import './styles.css'
@@ -230,7 +231,7 @@ export default function App() {
   const [manualCircles, setManualCircles] = useState<Square[]>([])
   const [profile, setProfile] = useState<PerformanceProfile>(initialProfile)
   const [lastReviewedSignature, setLastReviewedSignature] = useState<string | null>(null)
-  const [activeArea, setActiveArea] = useState<'play' | 'openings' | 'training' | 'camera'>('play')
+  const [activeArea, setActiveArea] = useState<'play' | 'openings' | 'training' | 'camera' | 'screen'>('play')
   const [storedGames, setStoredGames] = useState(0)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
@@ -538,6 +539,7 @@ export default function App() {
     <button className={activeArea === 'openings' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('openings') }}>Professor de Aberturas</button>
     <button className={activeArea === 'training' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('training') }}>Centro de Treino</button>
     <button className={activeArea === 'camera' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('camera') }}>Visão por câmera</button>
+    <button className={activeArea === 'screen' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('screen') }}>Análise da tela ao vivo</button>
   </nav>
 
   if (activeArea === 'openings') {
@@ -545,6 +547,7 @@ export default function App() {
   }
   if (activeArea === 'training') return <>{globalTabs}<TrainingHub pieceSet={pieceSet} /></>
   if (activeArea === 'camera') return <>{globalTabs}<CameraAnalysis /></>
+  if (activeArea === 'screen') return <>{globalTabs}<ScreenAnalysis engine={engine} pieceSet={pieceSet} /></>
 
   if (!playerSide) {
     return <>{globalTabs}<main className="setup-shell"><section className="setup-card">

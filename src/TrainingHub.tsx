@@ -212,20 +212,30 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
 
   const focusQueue = useMemo(() => {
     const all: TrainingPosition[] = [...errors, ...TACTICAL_POSITIONS, ...ENDGAME_POSITIONS]
-    return all.sort((a, b) => {
-      const pa = progressMap.get(a.id)
-      const pb = progressMap.get(b.id)
-      const dueA = (pa?.nextReviewAt ?? 0) <= clock ? 1 : 0
-      const dueB = (pb?.nextReviewAt ?? 0) <= clock ? 1 : 0
-      if (dueA !== dueB) return dueB - dueA
-      const personalA = a.id.startsWith('error:') ? 1 : 0
-      const personalB = b.id.startsWith('error:') ? 1 : 0
-      if (personalA !== personalB) return personalB - personalA
-      return mastery(pa) - mastery(pb)
-    }).slice(0, SESSION_TARGET)
+    return all
+      .filter((position) => {
+        const item = progressMap.get(position.id)
+        return !item || item.nextReviewAt <= clock
+      })
+      .sort((a, b) => {
+        const pa = progressMap.get(a.id)
+        const pb = progressMap.get(b.id)
+        const personalA = a.id.startsWith('error:') ? 1 : 0
+        const personalB = b.id.startsWith('error:') ? 1 : 0
+        if (personalA !== personalB) return personalB - personalA
+        return mastery(pa) - mastery(pb)
+      })
+      .slice(0, SESSION_TARGET)
   }, [errors, progressMap, clock])
 
-  const baseList: TrainingPosition[] = area === 'focus' ? focusQueue : area === 'errors' ? (dueErrors.length ? dueErrors : errors) : area === 'tactics' ? TACTICAL_POSITIONS : area === 'endgames' ? ENDGAME_POSITIONS : []
+  const orderedErrors = useMemo(() => [...errors].sort((a, b) => {
+    const dueA = (progressMap.get(a.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
+    const dueB = (progressMap.get(b.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
+    if (dueA !== dueB) return dueB - dueA
+    return b.loss - a.loss
+  }), [errors, progressMap, clock])
+
+  const baseList: TrainingPosition[] = area === 'focus' ? focusQueue : area === 'errors' ? orderedErrors : area === 'tactics' ? TACTICAL_POSITIONS : area === 'endgames' ? ENDGAME_POSITIONS : []
   const themes = useMemo(() => [...new Set(baseList.map((item) => item.theme))].sort(), [area, errors.length])
   const currentList = themeFilter === 'all' || area === 'focus' || area === 'errors' ? baseList : baseList.filter((item) => item.theme === themeFilter)
   const current = currentList.length ? currentList[index % currentList.length] : null
@@ -336,6 +346,6 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
       {(area === 'tactics' || area === 'endgames') && themes.length > 1 && <label className="training-filter">Tema <select value={themeFilter} onChange={(event) => setThemeFilter(event.target.value)}><option value="all">Todos</option>{themes.map((theme) => <option key={theme} value={theme}>{theme}</option>)}</select></label>}
       <TrainingBoard key={current.id} position={current} pieceSet={pieceSet} progress={progressMap.get(current.id)} now={clock} onGrade={(success) => void record(current, success)} onSolved={advance} />
       <div className="training-pager"><button onClick={() => setIndex((value) => Math.max(0, value - 1))}>Anterior</button><span>{(index % currentList.length) + 1} / {currentList.length}</span><button onClick={advance}>Próximo</button></div>
-    </> : <section className="training-card"><h2>Nenhum exercício disponível</h2><p>Revise uma partida para gerar puzzles próprios ou altere o filtro de treino.</p></section>}
+    </> : <section className="training-card"><h2>{area === 'focus' ? 'Revisões em dia' : 'Nenhum exercício disponível'}</h2><p>{area === 'focus' ? 'A fila adaptativa não antecipa exercícios agendados. Você ainda pode praticar livremente em Táticas, Finais ou Seus erros.' : 'Revise uma partida para gerar puzzles próprios ou altere o filtro de treino.'}</p></section>}
   </main>
 }

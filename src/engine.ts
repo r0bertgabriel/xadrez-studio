@@ -138,7 +138,7 @@ export class StockfishEngine {
   }
 
   private initializeWorker(worker: Worker): Promise<void> {
-    return new Promise((resolve, reject) => {
+    const promise = new Promise<void>((resolve, reject) => {
       let settled = false
       const timeoutId = window.setTimeout(() => {
         if (settled) return
@@ -188,6 +188,11 @@ export class StockfishEngine {
       worker.addEventListener('error', onError)
       worker.postMessage('uci')
     })
+    // The engine may be destroyed/recreated (e.g. React StrictMode's mount-cleanup-mount)
+    // before anything awaits `this.ready`. Without this, a later timeout/error here
+    // surfaces as an unhandled promise rejection even though nobody still cares about it.
+    promise.catch(() => {})
+    return promise
   }
 
   private async ensureReady() {

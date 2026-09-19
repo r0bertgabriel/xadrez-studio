@@ -4,7 +4,7 @@ import ChessBoard from './components/ChessBoard'
 import CameraAnalysis from './CameraAnalysis'
 import { boardSvg, openingFor, threatsFor } from './chess-tools'
 import { AnalysisCancelledError, type EngineAnalysis } from './engine'
-import { classifyReview, cloneGame, displayEval, evaluationForSide, explainMove, mateMessage, moveToSan, reviewLoss, scoreForSide, scoreOf, tacticalIdeas, terminalEvaluation } from './chess-analysis'
+import { classifyReview, cloneGame, displayEval, evaluationForSide, formatEval, mateMessage, moveToSan, reviewLoss, scoreForSide, scoreOf, tacticalIdeas, terminalEvaluation } from './chess-analysis'
 import { useChessGame } from './hooks/useChessGame'
 import { useStockfish } from './hooks/useStockfish'
 import { countGameHistory, getCachedReview, putCachedReview, putGameHistory, reviewCacheKey } from './persistence'
@@ -68,6 +68,18 @@ type PerformanceProfile = { games: number; totalAccuracy: number; white: { games
 const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' }
 const PREFERENCES_KEY = 'xadrez-studio-board-preferences-v1'
 const PERFORMANCE_KEY = 'xadrez-studio-performance-v1'
+
+function loadAppearancePreferences(): { pieceSet: PieceSet; boardTheme: BoardTheme; hintStyle: HintStyle; favoriteAppearance: FavoriteAppearance | null } {
+  const defaults = { pieceSet: 'cburnett' as PieceSet, boardTheme: 'walnut' as BoardTheme, hintStyle: 'classic' as HintStyle, favoriteAppearance: null as FavoriteAppearance | null }
+  try {
+    const saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as Partial<FavoriteAppearance & { favoriteAppearance: FavoriteAppearance }>
+    if (PIECE_SET_OPTIONS.some((option) => option.id === saved.pieceSet)) defaults.pieceSet = saved.pieceSet!
+    if (BOARD_THEME_OPTIONS.some((option) => option.id === saved.boardTheme)) defaults.boardTheme = saved.boardTheme!
+    if (HINT_STYLE_OPTIONS.some((option) => option.id === saved.hintStyle)) defaults.hintStyle = saved.hintStyle!
+    if (saved.favoriteAppearance && PIECE_SET_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.pieceSet) && BOARD_THEME_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.boardTheme) && HINT_STYLE_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.hintStyle)) defaults.favoriteAppearance = saved.favoriteAppearance
+  } catch { /* Preferences are optional. */ }
+  return defaults
+}
 const EXPORT_THEME_COLORS: Record<BoardTheme, { light: string; dark: string }> = {
   walnut: { light: '#d4bb8b', dark: '#63412f' }, oak: { light: '#d8c99f', dark: '#5d7054' }, graphite: { light: '#aeb7b4', dark: '#404b4a' }, tournament: { light: '#dfd1aa', dark: '#526e48' }, midnight: { light: '#bac8d0', dark: '#152b40' }, ocean: { light: '#a9c8c0', dark: '#22545e' }, burgundy: { light: '#d9c293', dark: '#592934' }, lavender: { light: '#cbc0da', dark: '#5e4d75' }, espresso: { light: '#cfb18a', dark: '#3f291f' }, ember: { light: '#bbbcb4', dark: '#733d33' },
 }
@@ -220,10 +232,10 @@ export default function App() {
   const [multiPv, setMultiPv] = useState(3)
   const [savedSession, setSavedSession] = useState(false)
   const [puzzleIndex, setPuzzleIndex] = useState<number | null>(null)
-  const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett')
-  const [boardTheme, setBoardTheme] = useState<BoardTheme>('walnut')
-  const [hintStyle, setHintStyle] = useState<HintStyle>('classic')
-  const [favoriteAppearance, setFavoriteAppearance] = useState<FavoriteAppearance | null>(null)
+  const [pieceSet, setPieceSet] = useState<PieceSet>(() => loadAppearancePreferences().pieceSet)
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>(() => loadAppearancePreferences().boardTheme)
+  const [hintStyle, setHintStyle] = useState<HintStyle>(() => loadAppearancePreferences().hintStyle)
+  const [favoriteAppearance, setFavoriteAppearance] = useState<FavoriteAppearance | null>(() => loadAppearancePreferences().favoriteAppearance)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [markTool, setMarkTool] = useState<MarkTool>('move')
   const [manualArrowStart, setManualArrowStart] = useState<Square | null>(null)
@@ -255,6 +267,7 @@ export default function App() {
   const activePuzzle = puzzleIndex === null ? null : puzzles[puzzleIndex] ?? null
   const opening = useMemo(() => openingFor(liveGame), [liveGame])
   const tacticalInsights = useMemo(() => threatsFor(liveGame), [liveGame])
+  const bestMoveIdeas = useMemo(() => (bestMove ? tacticalIdeas(liveGame, bestMove) : []), [liveGame, bestMove])
 
   useEffect(() => {
     setSavedSession(Boolean(localStorage.getItem(STORAGE_KEY)))
@@ -269,16 +282,6 @@ export default function App() {
   }, [])
 
   useEffect(() => { localStorage.setItem(PERFORMANCE_KEY, JSON.stringify(profile)) }, [profile])
-
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as Partial<FavoriteAppearance & { favoriteAppearance: FavoriteAppearance }>
-      if (PIECE_SET_OPTIONS.some((option) => option.id === saved.pieceSet)) setPieceSet(saved.pieceSet!)
-      if (BOARD_THEME_OPTIONS.some((option) => option.id === saved.boardTheme)) setBoardTheme(saved.boardTheme!)
-      if (HINT_STYLE_OPTIONS.some((option) => option.id === saved.hintStyle)) setHintStyle(saved.hintStyle!)
-      if (saved.favoriteAppearance && PIECE_SET_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.pieceSet) && BOARD_THEME_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.boardTheme) && HINT_STYLE_OPTIONS.some((option) => option.id === saved.favoriteAppearance?.hintStyle)) setFavoriteAppearance(saved.favoriteAppearance)
-    } catch { /* Preferences are optional. */ }
-  }, [])
 
   useEffect(() => {
     localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ pieceSet, boardTheme, hintStyle, favoriteAppearance }))
@@ -503,13 +506,18 @@ export default function App() {
 
       const replay = gameAtPly(source, 0)
       const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
+      // The position after move N is the same position as before move N+1 — reuse that
+      // analysis instead of asking Stockfish to search it twice.
+      let carriedAnalysis: EngineAnalysis | null = null
       for (let index = 0; index < moves.length; index += 1) {
         const move = moves[index]; const mover = replay.turn(); const actual = `${move.from}${move.to}${move.promotion ?? ''}`
-        if (mover !== side && mode === 'coach') { replay.move({ from: move.from, to: move.to, promotion: move.promotion }); continue }
-        const fenBefore = replay.fen(); const before = await activeEngine.analyze(fenBefore, reviewDepth, 1)
+        if (mover !== side && mode === 'coach') { replay.move({ from: move.from, to: move.to, promotion: move.promotion }); carriedAnalysis = null; continue }
+        const fenBefore = replay.fen(); const before = carriedAnalysis ?? await activeEngine.analyze(fenBefore, reviewDepth, 1)
         const best = before.bestMove; const bestSan = moveToSan(replay, best); const beforeEval = evaluationForSide(before, mover)
         replay.move({ from: move.from, to: move.to, promotion: move.promotion })
-        const afterEval = replay.isGameOver() ? terminalEvaluation(replay, mover) : evaluationForSide(await activeEngine.analyze(replay.fen(), reviewDepth, 1), mover)
+        const afterAnalysis = replay.isGameOver() ? null : await activeEngine.analyze(replay.fen(), reviewDepth, 1)
+        const afterEval = afterAnalysis ? evaluationForSide(afterAnalysis, mover) : terminalEvaluation(replay, mover)
+        carriedAnalysis = afterAnalysis
         const loss = reviewLoss(beforeEval, afterEval)
         const afterScore = afterEval.mate !== null ? Math.sign(afterEval.mate) * (10000 - Math.min(99, Math.abs(afterEval.mate))) : (afterEval.cp ?? 0)
         rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classifyReview(loss, actual === best, beforeEval, afterEval), eval: afterScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
@@ -608,11 +616,11 @@ export default function App() {
     </div>
 
     <aside className="coach-panel">
-      <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? displayEval(userEval) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
+      <section className="eval-card"><div className="card-heading"><div><span className="section-label">AVALIAÇÃO {mode === 'analysis' ? 'DAS BRANCAS' : 'DO SEU LADO'}</span><strong className="big-eval">{analysis ? formatEval(analysis, perspective) : '—'}</strong></div><span className="side-badge">{mode === 'analysis' ? 'Livre' : playerSide === 'w' ? 'Brancas' : 'Pretas'}</span></div><div className="eval-track"><div className="eval-fill" style={{ width: `${Math.max(4, Math.min(96, 50 + userEval / 20))}%` }} /></div>{mateAlert ? <small className="mate-inline">{mateAlert}</small> : <small>Positivo significa vantagem para a perspectiva exibida.</small>}</section>
       <section className="card opening-card"><div className="card-title"><strong>Abertura</strong><span>{opening?.eco ?? 'fora do livro'}</span></div>{opening ? <><b>{opening.name}</b><div className="book-moves">{opening.moves.map((move) => <button key={move} onClick={() => playBookMove(move)} disabled={boardLocked}>{move}</button>)}</div></> : <p className="empty-state">O livro local não possui uma continuação catalogada nesta posição.</p>}</section>
       <section className="card opportunities-card"><div className="card-title"><strong>Oportunidades táticas</strong><span>{tacticalInsights.opportunities.length}</span></div>{tacticalInsights.opportunities.length ? <ul>{tacticalInsights.opportunities.map((item, index) => <li className={item.kind} key={`opportunity-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhum xeque, captura ou padrão tático relevante disponível para o lado a jogar.</p>}</section>
       <section className="card threats-card"><div className="card-title"><strong>Ameaças reais</strong><span>{tacticalInsights.threats.length}</span></div>{tacticalInsights.threats.length ? <ul>{tacticalInsights.threats.map((item, index) => <li className={item.kind} key={`threat-${item.text}-${index}`}>{item.text}</li>)}</ul> : <p className="empty-state">Nenhuma peça do lado a jogar está pendurada no momento.</p>}</section>
-      <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{explainMove(liveGame, bestMove)}</p><div className="idea-tags">{tacticalIdeas(liveGame, bestMove).map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
+      <section className={`card recommendation-card ${recommendationActive ? 'active' : ''}`}><div className="card-title"><span className="section-label">MELHOR JOGADA</span>{thinking && <span className="mini-loader" />}</div>{recommendationActive ? <>{bestMove ? <><div className="move-hero"><b>{bestSan}</b><span className="uci-move">{bestMove.slice(0, 2)} → {bestMove.slice(2, 4)}</span></div><p>{bestSan}: {bestMoveIdeas.join('; ')}.</p><div className="idea-tags">{bestMoveIdeas.map((idea) => <span key={idea}>{idea}</span>)}</div></> : <span className="muted">Calculando…</span>}</> : <div className="waiting-coach"><strong>Primeiro mova o adversário</strong><p>A engine recalcula a melhor resposta após o lance.</p></div>}</section>
       <section className="card"><div className="card-title"><strong>Linhas candidatas</strong><span>Top {multiPv}</span></div><div className="lines">{recommendationActive && analysis?.lines.length ? analysis.lines.map((line) => { const score = line.mate !== null ? scoreForSide(Math.sign(line.mate) * 10000, perspective) : scoreForSide(line.scoreCp ?? 0, perspective); return <div className="line" key={line.multipv}><b>{line.multipv}</b><code>{pvToSan(liveGame.fen(), line.pv)}</code><span>{line.mate !== null ? `${score > 0 ? 'M+' : 'M−'}${Math.abs(line.mate)}` : displayEval(score)}</span></div> }) : <div className="empty-state">Sem variantes nesta posição.</div>}</div></section>
       <section className="card engine-metrics"><div className="card-title"><strong>Telemetria</strong><span>linha principal</span></div>{analysis?.lines[0] ? <div><span><b>Prof.</b> {analysis.lines[0].depth}{analysis.lines[0].selDepth ? `/${analysis.lines[0].selDepth}` : ''}</span><span><b>Nós</b> {analysis.lines[0].nodes?.toLocaleString('pt-BR') ?? '—'}</span><span><b>NPS</b> {analysis.lines[0].nps?.toLocaleString('pt-BR') ?? '—'}</span><span><b>Tempo</b> {analysis.lines[0].timeMs ? `${analysis.lines[0].timeMs} ms` : '—'}</span></div> : <p className="empty-state">Aguardando análise.</p>}</section>
       <section className="card appearance-card"><div className="card-title"><strong>Aparência</strong><span>salvo localmente</span></div><label className="appearance-select"><span>Conjunto de peças · {PIECE_SET_OPTIONS.length} estilos</span><select value={pieceSet} onChange={(event) => setPieceSet(event.target.value as PieceSet)}>{PIECE_SET_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Tabuleiro · {BOARD_THEME_OPTIONS.length} temas</span><select value={boardTheme} onChange={(event) => setBoardTheme(event.target.value as BoardTheme)}>{BOARD_THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Seta de dica · {HINT_STYLE_OPTIONS.length} estilos</span><select value={hintStyle} onChange={(event) => setHintStyle(event.target.value as HintStyle)}>{HINT_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><div className="favorite-appearance"><div><strong>{favoriteAppearance ? 'Favorito salvo' : 'Sem favorito salvo'}</strong><small>{favoriteAppearance ? `${PIECE_SET_OPTIONS.find((option) => option.id === favoriteAppearance.pieceSet)?.label} · ${BOARD_THEME_OPTIONS.find((option) => option.id === favoriteAppearance.boardTheme)?.label} · ${HINT_STYLE_OPTIONS.find((option) => option.id === favoriteAppearance.hintStyle)?.label}` : 'Salve sua combinação atual para recuperá-la em um clique.'}</small></div><button onClick={() => setFavoriteAppearance({ pieceSet, boardTheme, hintStyle })}>Salvar favorito</button>{favoriteAppearance && <button className="apply-favorite" onClick={() => { setPieceSet(favoriteAppearance.pieceSet); setBoardTheme(favoriteAppearance.boardTheme); setHintStyle(favoriteAppearance.hintStyle) }}>Aplicar favorito</button>}</div></section>

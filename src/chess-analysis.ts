@@ -37,6 +37,17 @@ export function displayEval(cp: number) {
   return `${pawns >= 0 ? '+' : ''}${pawns.toFixed(1)}`
 }
 
+/** Unlike displayEval, this keeps the exact mate distance instead of collapsing it into the encoded centipawn score. */
+export function formatEval(analysis: EngineAnalysis | null, side: Color) {
+  const line = analysis?.lines[0]
+  if (!line) return '—'
+  if (line.mate !== null) {
+    const relative = scoreForSide(line.mate, side)
+    return `${relative > 0 ? 'M+' : 'M−'}${Math.abs(relative)}`
+  }
+  return displayEval(scoreForSide(line.scoreCp ?? 0, side))
+}
+
 export function evaluationForSide(analysis: EngineAnalysis, side: Color): ReviewEvaluation {
   const line = analysis.lines[0]
   if (!line) return { cp: 0, mate: null }

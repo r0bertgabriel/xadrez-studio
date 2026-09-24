@@ -1,8 +1,32 @@
-# Xadrez Coach
+<div align="center">
+
+<img src="docs/assets/logo-xadrez-studio.png" alt="Logo do Xadrez Studio: cavalo de xadrez branco sobre fundo preto" width="220" />
+
+# Xadrez Studio
+
+**Estude aberturas, analise partidas e evolua no xadrez com o Stockfish 19 executado localmente.**
+
+</div>
 
 Aplicação web para estudar xadrez, analisar partidas e praticar posições com o **Stockfish 19 Lite executado localmente no navegador**. O tabuleiro permite reproduzir manualmente os lances de uma partida, examinar variantes e revisar decisões sem depender de uma API paga ou de um backend de análise.
 
 > **Estado das funcionalidades:** a análise do tabuleiro, os treinos e a captura de tela têm fluxos distintos. A captura **por câmera** oferece visualização e calibração do tabuleiro, mas **ainda não reconhece automaticamente peças ou lances**. A captura **de tela** acompanha mudanças visuais em um tabuleiro previamente calibrado e pode exigir confirmação manual de lances ambíguos; não faz reconhecimento geral de peças por IA.
+
+## Imagens do projeto
+
+As capturas abaixo apresentam a interface atual do Xadrez Studio.
+
+### Tela inicial
+
+![Tela de boas-vindas do Xadrez Studio, com seleção de brancas, pretas ou análise livre](docs/assets/tela-inicial.png)
+
+### Jogar e analisar
+
+![Tabuleiro do Xadrez Studio, avaliação da posição, abertura, recomendações e variantes de análise](docs/assets/analise-partida.png)
+
+### Professor de Aberturas
+
+![Estúdio de aberturas com lista de linhas, tabuleiro, lição explicada e opção de treino ativo](docs/assets/professor-aberturas.png)
 
 ## O que é o Stockfish?
 

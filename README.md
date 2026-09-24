@@ -18,12 +18,76 @@ Aplicação web para estudar xadrez, analisar partidas e praticar posições com
 
 O tabuleiro principal também oferece movimento por clique ou arrastar/soltar, indicação de movimentos legais, promoção, destaque de xeque, detecção de fim de partida e personalização de peças e cores. A aplicação é responsiva para desktop e dispositivos móveis.
 
+
+## Visão geral dos fluxos
+
+Os diagramas abaixo são renderizados diretamente pelo GitHub e mostram os caminhos disponíveis na aplicação.
+
+### Jornada de estudo
+
+```mermaid
+flowchart TD
+    A["Abrir Xadrez Coach"] --> B{"O que deseja fazer?"}
+    B --> C["Coach ou análise livre"]
+    B --> D["Professor de Aberturas"]
+    B --> E["Centro de Treino"]
+    B --> F["Captura de tela"]
+    B --> G["Câmera (experimental)"]
+    C --> H["Jogar / importar PGN / carregar FEN"]
+    H --> I["Analisar posição com Stockfish local"]
+    I --> J["Revisar partida"]
+    J --> K["Identificar erros e melhores lances"]
+    K --> E
+    D --> L["Lição explicada ou treino ativo"]
+    E --> M["Tática, finais, erros e repetição espaçada"]
+    F --> N["Calibrar tabuleiro e acompanhar lances"]
+    N --> I
+    G --> O["Visualizar e calibrar grade 8×8"]
+```
+
+### Arquitetura de execução local
+
+```mermaid
+flowchart LR
+    U["Usuário"] --> UI["React + TypeScript"]
+    UI --> GAME["chess.js · regras e posição"]
+    GAME --> ENG["Cliente UCI · engine.ts"]
+    ENG <--> WORKER["Web Worker + Stockfish 19 Lite / WASM"]
+    UI <--> LS[("localStorage · sessão")]
+    UI <--> IDB[("IndexedDB · partidas, revisões e treino")]
+    UI --> CAP["APIs de captura do navegador"]
+    CAP --> VISION["Calibração e rastreamento visual"]
+    VISION --> GAME
+```
+
+A captura por câmera **não** produz automaticamente uma posição FEN: o reconhecimento de peças ainda não está implementado nessa área. O diagrama representa somente a integração das capturas que já alimentam uma posição conhecida do jogo. O motor, os dados da sessão e as revisões não precisam de uma API de análise remota.
+
+### Fluxo da análise de tela
+
+```mermaid
+flowchart TD
+    A["Compartilhar tela"] --> B["Marcar quatro cantos do tabuleiro"]
+    B --> C["Definir orientação e posição conhecida"]
+    C --> D["Iniciar rastreamento visual"]
+    D --> E["Amostrar casas e detectar alterações estáveis"]
+    E --> F{"Há lance legal compatível?"}
+    F -->|"Um candidato"| G["Atualizar posição"]
+    F -->|"Ambíguo"| H["Solicitar escolha manual"]
+    F -->|"Nenhum"| I["Solicitar correção / recalibração"]
+    H --> G
+    I --> C
+    G --> J["Solicitar análise ao Stockfish"]
+    J --> D
+```
+
+> O rastreamento depende da qualidade da imagem, de uma posição inicial correta e de um tabuleiro calibrado. Não se trata de reconhecimento universal de peças nem de uma integração com plataformas externas de xadrez.
+
 ## Tecnologias e funcionamento
 
 - **Interface:** React 19, TypeScript e Vite 7.
 - **Regras e notação:** `chess.js`.
 - **Motor:** Stockfish 19 Lite, via Web Worker/WebAssembly e protocolo UCI.
-- **Persistência:** sessão local no `localStorage`; histórico, revisões e progresso de treino mantidos no armazenamento do navegador.
+- **Persistência:** sessão local no `localStorage`; histórico, revisões e progresso de treino no `IndexedDB` do navegador.
 - **Captura e visão:** APIs de câmera/compartilhamento de tela do navegador e comparação de alterações visuais nas casas do tabuleiro. O pacote `onnxruntime-web` está presente nas dependências, mas isso **não significa que o reconhecimento por câmera esteja pronto**.
 
 A análise do motor é local. Não é necessário cadastrar uma chave de API para as funções descritas acima. A performance depende do navegador e do equipamento; a captura de tela requer permissão explícita e pode variar conforme o conteúdo compartilhado.
@@ -121,6 +185,12 @@ Os testes automatizados cobrem regras críticas de xadrez e dados de treino. O c
 
 Se a análise não iniciar, consulte o console do navegador e, ao usar `start.sh`, o arquivo `.xadrez-dev.log`. Confira se os arquivos do motor foram preparados com `npm run prepare:engine`. Para problemas de captura, verifique permissões, origem segura (`localhost`/HTTPS) e a calibração do tabuleiro.
 
-## Licenças e atribuições
+## Licença livre e componentes de terceiros
 
-O Stockfish/Stockfish.js é distribuído sob **GPL-3.0**; verifique as obrigações da licença ao redistribuir o motor e seus binários. Os conjuntos de peças possuem atribuições próprias em [`public/pieces/ATTRIBUTION.md`](public/pieces/ATTRIBUTION.md). Este repositório não declara aqui uma licença geral para todo o código da aplicação.
+O **código e a documentação autorais** deste projeto são disponibilizados sob a [licença MIT](LICENSE): é permitido usar, estudar, modificar e redistribuir esse material, inclusive comercialmente, preservando o aviso de direitos autorais e a licença. A licença MIT **não altera** os direitos sobre arquivos de terceiros presentes no repositório ou instalados como dependências.
+
+- **Stockfish / Stockfish.js:** motor distribuído sob GPL-3.0. Ao redistribuir um produto que inclua o motor, é necessário avaliar e cumprir as exigências da GPL, incluindo a disponibilização do código-fonte correspondente e a licença aplicável ao conjunto distribuído. A licença MIT do código autoral não dispensa essas obrigações.
+- **Conjuntos de peças:** artes com licenças próprias, incluindo condições de atribuição e compartilhamento pela mesma licença em alguns conjuntos; consulte [`public/pieces/ATTRIBUTION.md`](public/pieces/ATTRIBUTION.md) e a origem de cada asset antes de redistribuí-lo.
+- **Outras dependências e modelos/datasets:** permanecem sujeitos às licenças dos respectivos titulares; confira suas condições antes de redistribuir binários ou materiais derivados.
+
+**Importante:** manter o repositório privado não o torna automaticamente público. A licença descreve as permissões concedidas a quem tiver acesso legítimo ao código.

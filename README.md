@@ -12,6 +12,29 @@ Aplicação web para estudar xadrez, analisar partidas e praticar posições com
 
 > **Estado das funcionalidades:** a análise do tabuleiro, os treinos e a captura de tela têm fluxos distintos. A captura **por câmera** oferece visualização e calibração do tabuleiro, mas **ainda não reconhece automaticamente peças ou lances**. A captura **de tela** acompanha mudanças visuais em um tabuleiro previamente calibrado e pode exigir confirmação manual de lances ambíguos; não faz reconhecimento geral de peças por IA.
 
+## Sumário
+
+- [Imagens do projeto](#imagens-do-projeto)
+  - [Tela inicial](#tela-inicial)
+  - [Jogar e analisar](#jogar-e-analisar)
+  - [Professor de Aberturas](#professor-de-aberturas)
+- [O que é o Stockfish?](#o-que-é-o-stockfish)
+- [Funcionalidades](#funcionalidades)
+- [Visão geral dos fluxos](#visão-geral-dos-fluxos)
+  - [Jornada de estudo](#jornada-de-estudo)
+  - [Arquitetura de execução local](#arquitetura-de-execução-local)
+  - [Fluxo da análise de tela](#fluxo-da-análise-de-tela)
+- [Tecnologias e funcionamento](#tecnologias-e-funcionamento)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação e execução](#instalação-e-execução)
+  - [Execução em segundo plano no Linux](#execução-em-segundo-plano-no-linux)
+  - [Execução no Windows](#execução-no-windows)
+- [Como usar](#como-usar)
+- [Comandos úteis](#comandos-úteis)
+- [Organização do código](#organização-do-código)
+- [Testes e diagnóstico](#testes-e-diagnóstico)
+- [Licença livre e componentes de terceiros](#licença-livre-e-componentes-de-terceiros)
+
 ## Imagens do projeto
 
 As capturas abaixo apresentam a interface atual do Xadrez Studio.

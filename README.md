@@ -4,6 +4,19 @@ Aplicação web para estudar xadrez, analisar partidas e praticar posições com
 
 > **Estado das funcionalidades:** a análise do tabuleiro, os treinos e a captura de tela têm fluxos distintos. A captura **por câmera** oferece visualização e calibração do tabuleiro, mas **ainda não reconhece automaticamente peças ou lances**. A captura **de tela** acompanha mudanças visuais em um tabuleiro previamente calibrado e pode exigir confirmação manual de lances ambíguos; não faz reconhecimento geral de peças por IA.
 
+## O que é o Stockfish?
+
+O **Stockfish** é um motor de xadrez (*chess engine*) livre e de código aberto que calcula e avalia posições para encontrar lances fortes. Diferentemente de um aplicativo para jogar xadrez, ele não fornece por si só uma interface de tabuleiro: recebe uma posição, examina sequências possíveis de lances e devolve resultados que outros programas podem apresentar ao jogador.
+
+Neste projeto, o **Stockfish 19 Lite** é o motor responsável pelas recomendações e avaliações. O aplicativo envia a posição atual em **FEN** (uma notação textual que descreve o estado do tabuleiro) ao motor usando o protocolo **UCI**, e recebe análises que a interface apresenta em forma de melhores lances, variantes, avaliação e alertas de mate. O motor executa no próprio navegador usando **WebAssembly** e um **Web Worker**, sem exigir uma API paga ou enviar posições a um servidor de análise.
+
+- **Melhor lance:** movimento sugerido pelo motor para a posição analisada; não representa garantia de vitória.
+- **Avaliação:** estimativa da vantagem de um dos lados, geralmente expressa em centipawns (100 centipawns = um peão de referência) ou em número de lances até um mate calculado. É uma medida do motor, não uma pontuação absoluta da partida.
+- **Profundidade:** quantidade de camadas de lances exploradas na busca; valores maiores normalmente exigem mais processamento e tempo.
+- **MultiPV:** número de variantes principais apresentadas simultaneamente, permitindo comparar alternativas em vez de mostrar apenas um lance.
+
+O Stockfish é um **motor de busca e avaliação de posições**, não um modelo de linguagem: as explicações em texto desta aplicação são heurísticas produzidas pela própria interface. Para conhecer o motor e seu código-fonte, consulte [stockfishchess.org](https://stockfishchess.org/) e o [repositório oficial do Stockfish](https://github.com/official-stockfish/Stockfish). Sua distribuição é regida pela GPL-3.0; veja a seção de licenças abaixo.
+
 ## Funcionalidades
 
 | Área | O que oferece |

@@ -134,15 +134,16 @@ A análise do motor é local. Não é necessário cadastrar uma chave de API par
 - Node.js e npm instalados.
 - Navegador moderno com suporte a WebAssembly e Web Workers.
 - Para captura de câmera ou tela: navegador compatível, permissão de acesso e execução em `localhost` ou HTTPS.
-- Para os scripts `start.sh` e `stop.sh`: ambiente Linux com Bash.
+- No Linux, os scripts `start.sh` e `stop.sh` exigem Bash.
+- No Windows, use o script `start-windows.bat` com Node.js instalado e disponível no `PATH`.
 
 ## Instalação e execução
 
 Clone o repositório e entre na pasta:
 
 ```bash
-git clone https://github.com/r0bertgabriel/xadrez-dev.git
-cd xadrez-dev
+git clone https://github.com/r0bertgabriel/xadrez-studio.git
+cd xadrez-studio
 npm ci
 npm run dev
 ```
@@ -170,6 +171,16 @@ tail -f .xadrez-dev.log
 ```
 
 **Atenção:** o script inicia o Vite com `--host 0.0.0.0`, disponibilizando o servidor de desenvolvimento nas interfaces de rede do computador. Use-o apenas em uma rede confiável; não é uma configuração de produção.
+
+### Execução no Windows
+
+Com o Node.js LTS instalado, dê duplo clique em `start-windows.bat` no Explorador de Arquivos, ou execute no Prompt de Comando:
+
+```bat
+start-windows.bat
+```
+
+O script instala as dependências quando necessário, prepara o Stockfish, abre o navegador em `http://localhost:5173` e mantém o servidor ativo na mesma janela. Para encerrar, pressione `Ctrl+C` nessa janela.
 
 ## Como usar
 

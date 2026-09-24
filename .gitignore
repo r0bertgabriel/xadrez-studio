@@ -7,3 +7,8 @@ public/stockfish/
 .env
 .env.*
 !.env.example
+
+# Arquivos locais de configuração e instruções de assistentes de IA
+.agents/
+.claude/
+.gemini/

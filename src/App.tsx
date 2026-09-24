@@ -68,6 +68,12 @@ type PerformanceProfile = { games: number; totalAccuracy: number; white: { games
 const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' }
 const PREFERENCES_KEY = 'xadrez-studio-board-preferences-v1'
 const PERFORMANCE_KEY = 'xadrez-studio-performance-v1'
+const THEME_KEY = 'xadrez-studio-theme-v1'
+type Theme = 'dark' | 'light'
+
+function loadTheme(): Theme {
+  try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark' } catch { return 'dark' }
+}
 
 function loadAppearancePreferences(): { pieceSet: PieceSet; boardTheme: BoardTheme; hintStyle: HintStyle; favoriteAppearance: FavoriteAppearance | null } {
   const defaults = { pieceSet: 'cburnett' as PieceSet, boardTheme: 'walnut' as BoardTheme, hintStyle: 'classic' as HintStyle, favoriteAppearance: null as FavoriteAppearance | null }
@@ -219,6 +225,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState<EngineAnalysis | null>(null)
   const [thinking, setThinking] = useState(false)
   const [reviewing, setReviewing] = useState(false)
+  const [reviewProgress, setReviewProgress] = useState<{ completed: number; total: number } | null>(null)
   const [showHint, setShowHint] = useState(true)
   const [engineError, setEngineError] = useState<string | null>(null)
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion>(null)
@@ -245,6 +252,8 @@ export default function App() {
   const [lastReviewedSignature, setLastReviewedSignature] = useState<string | null>(null)
   const [activeArea, setActiveArea] = useState<'play' | 'openings' | 'training' | 'camera' | 'screen'>('play')
   const [storedGames, setStoredGames] = useState(0)
+  const [theme, setTheme] = useState<Theme>(loadTheme)
+  const [themeTransition, setThemeTransition] = useState(false)
 
   const liveGame = useMemo(() => cloneGame(gameRef.current), [fen])
   const history = liveGame.history()
@@ -286,6 +295,20 @@ export default function App() {
   }, [])
 
   useEffect(() => { localStorage.setItem(PERFORMANCE_KEY, JSON.stringify(profile)) }, [profile])
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem(THEME_KEY, theme)
+  }, [theme])
+
+  function toggleTheme() {
+    const root = document.documentElement
+    root.classList.remove('theme-switching')
+    void root.offsetWidth
+    root.classList.add('theme-switching')
+    setThemeTransition(true)
+    setTheme((current) => current === 'dark' ? 'light' : 'dark')
+    window.setTimeout(() => { root.classList.remove('theme-switching'); setThemeTransition(false) }, 1_220)
+  }
 
   useEffect(() => {
     localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ pieceSet, boardTheme, hintStyle, favoriteAppearance }))
@@ -497,7 +520,10 @@ export default function App() {
     const signature = source.pgn()
     const reviewDepth = Math.max(10, depth - 3)
     const cacheKey = reviewCacheKey(signature, side, mode, reviewDepth)
-    requestRef.current += 1; cancelAnalysis(); setThinking(false); setReviewing(true); setReview([]); setEngineError(null)
+    const moves = source.history({ verbose: true })
+    const totalReviewedMoves = moves.filter((move) => mode === 'analysis' || move.color === side).length
+    const chartPerspective: Color = mode === 'analysis' ? 'w' : side
+    requestRef.current += 1; cancelAnalysis(); setThinking(false); setReviewing(true); setReviewProgress({ completed: 0, total: totalReviewedMoves }); setReview([]); setSelectedReviewPly(null); setEngineError(null)
 
     try {
       const cached = await getCachedReview<ReviewMove>(cacheKey)
@@ -509,7 +535,7 @@ export default function App() {
       }
 
       const replay = gameAtPly(source, 0)
-      const moves = source.history({ verbose: true }); const rows: ReviewMove[] = []
+      const rows: ReviewMove[] = []
       // The position after move N is the same position as before move N+1 — reuse that
       // analysis instead of asking Stockfish to search it twice.
       let carriedAnalysis: EngineAnalysis | null = null
@@ -521,11 +547,13 @@ export default function App() {
         replay.move({ from: move.from, to: move.to, promotion: move.promotion })
         const afterAnalysis = replay.isGameOver() ? null : await activeEngine.analyze(replay.fen(), reviewDepth, 1)
         const afterEval = afterAnalysis ? evaluationForSide(afterAnalysis, mover) : terminalEvaluation(replay, mover)
+        const chartEval = afterAnalysis ? evaluationForSide(afterAnalysis, chartPerspective) : terminalEvaluation(replay, chartPerspective)
         carriedAnalysis = afterAnalysis
         const loss = reviewLoss(beforeEval, afterEval)
-        const afterScore = afterEval.mate !== null ? Math.sign(afterEval.mate) * (10000 - Math.min(99, Math.abs(afterEval.mate))) : (afterEval.cp ?? 0)
-        rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classifyReview(loss, actual === best, beforeEval, afterEval), eval: afterScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
+        const chartScore = chartEval.mate !== null ? Math.sign(chartEval.mate) * (10000 - Math.min(99, Math.abs(chartEval.mate))) : (chartEval.cp ?? 0)
+        rows.push({ ply: index + 1, san: move.san, actual, best, bestSan, loss, label: classifyReview(loss, actual === best, beforeEval, afterEval), eval: chartScore, fenBefore, fenAfter: replay.fen(), ideas: tacticalIdeas(new Chess(fenBefore), best) })
         setReview([...rows])
+        setReviewProgress({ completed: rows.length, total: totalReviewedMoves })
       }
 
       const accuracy = accuracyFor(rows)
@@ -535,8 +563,10 @@ export default function App() {
       setStoredGames(await countGameHistory())
       saveProfile(rows)
     } catch (error) {
-      if (!(error instanceof AnalysisCancelledError)) setEngineError(error instanceof Error ? error.message : 'A revisão não pôde ser concluída.')
-    } finally { setReviewing(false); if (playerSide && !gameRef.current.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current) }
+      setReview([])
+      setSelectedReviewPly(null)
+      if (!(error instanceof AnalysisCancelledError)) setEngineError(error instanceof Error ? error.message : 'A revisão não pôde ser concluída. Tente novamente.')
+    } finally { setReviewing(false); setReviewProgress(null); if (playerSide && !gameRef.current.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current) }
   }
 
   const accuracy = review.length ? accuracyFor(review) : null
@@ -552,7 +582,9 @@ export default function App() {
     <button className={activeArea === 'training' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('training') }}>Centro de Treino</button>
     <button className="under-development" disabled title="Em desenvolvimento">Visão por câmera <span>Em desenvolvimento</span></button>
     <button className="under-development" disabled title="Em desenvolvimento">Análise da tela ao vivo <span>Em desenvolvimento</span></button>
+    <button className="theme-toggle" onClick={toggleTheme} aria-pressed={theme === 'light'} aria-label={`Ativar tema ${theme === 'dark' ? 'claro' : 'escuro'}`}><span aria-hidden="true">{theme === 'dark' ? '☼' : '☾'}</span>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</button>
   </nav>
+  const themeEffect = themeTransition && <div className="theme-piece-transition" aria-hidden="true"><div className="theme-bishop"><span className="theme-bishop-glow" /><img src="/effects/bishop-transition-3d.png" alt="" /></div></div>
   const projectCredit = <footer className="project-credit">
     <img src="/brand/robert-araujo.jpeg" alt="Robert Araújo" />
     <span>Projeto desenvolvido por <strong>Robert Araújo</strong></span>
@@ -560,11 +592,11 @@ export default function App() {
   </footer>
 
   if (activeArea === 'openings') {
-    return <>{globalTabs}<OpeningTrainer engine={engine} pieceSet={pieceSet} />{projectCredit}</>
+    return <>{globalTabs}{themeEffect}<OpeningTrainer engine={engine} pieceSet={pieceSet} />{projectCredit}</>
   }
-  if (activeArea === 'training') return <>{globalTabs}<TrainingHub pieceSet={pieceSet} />{projectCredit}</>
-  if (activeArea === 'camera') return <>{globalTabs}<CameraAnalysis />{projectCredit}</>
-  if (activeArea === 'screen') return <>{globalTabs}<ScreenAnalysis engine={engine} pieceSet={pieceSet} />{projectCredit}</>
+  if (activeArea === 'training') return <>{globalTabs}{themeEffect}<TrainingHub pieceSet={pieceSet} />{projectCredit}</>
+  if (activeArea === 'camera') return <>{globalTabs}{themeEffect}<CameraAnalysis />{projectCredit}</>
+  if (activeArea === 'screen') return <>{globalTabs}{themeEffect}<ScreenAnalysis engine={engine} pieceSet={pieceSet} />{projectCredit}</>
 
   if (!playerSide) {
     return <>{globalTabs}<main className="setup-shell"><section className="setup-card">
@@ -578,7 +610,7 @@ export default function App() {
       {savedSession && <button className="restore-button" onClick={restoreSession}>Restaurar última sessão</button>}
       {engineError && <div className="error-banner"><strong>Sessão:</strong> {engineError}</div>}
       <div className="setup-note">Sem LLM, API paga ou adversário obrigatório.</div>
-    </section></main>{projectCredit}</>
+    </section></main>{themeEffect}{projectCredit}</>
   }
 
   const topLabel = orientation === 'w' ? 'Pretas' : 'Brancas'
@@ -614,7 +646,7 @@ export default function App() {
           {arrowFrom && arrowTo && viewPly === null && <svg className={`hint-arrow hint-${hintStyle}`} viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="arrowhead" markerWidth="3.8" markerHeight="3.8" refX="3.2" refY="1.9" orient="auto"><polygon points="0 0, 3.8 1.9, 0 3.8" /></marker></defs><line x1={arrowFrom.x} y1={arrowFrom.y} x2={arrowTo.x} y2={arrowTo.y} markerEnd="url(#arrowhead)" /></svg>}
           {(manualArrows.length > 0 || manualCircles.length > 0) && <svg className="manual-annotations" viewBox="0 0 100 100" aria-hidden="true"><defs><marker id="manual-arrowhead" markerWidth="3.8" markerHeight="3.8" refX="3.2" refY="1.9" orient="auto"><polygon points="0 0, 3.8 1.9, 0 3.8" /></marker></defs>{manualArrows.map((arrow, index) => { const from = squareCenter(arrow.from, orientation); const to = squareCenter(arrow.to, orientation); return <line key={`${arrow.from}-${arrow.to}-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} markerEnd="url(#manual-arrowhead)" /> })}{manualCircles.map((square) => { const center = squareCenter(square, orientation); return <circle key={square} cx={center.x} cy={center.y} r="5.2" /> })}</svg>}
         </ChessBoard>
-        {reviewing && <div className="board-overlay"><span className="spinner" /><strong>Analisando seus lances</strong></div>}
+        {reviewing && <div className="board-overlay"><span className="spinner" /><strong>Analisando seus lances{reviewProgress ? ` · ${reviewProgress.completed}/${reviewProgress.total}` : ''}</strong></div>}
       </div>
       <div className="player-row my-row"><div><span className="player-dot mine" /><strong>{bottomLabel}</strong></div><span>{mode === 'analysis' ? 'ambos os lados analisados' : (liveGame.turn() === playerSide ? 'sua recomendação está ativa' : 'aguardando o adversário')}</span></div>
       <div className={`turn-banner ${result ? 'finished' : ''}`} aria-live="polite"><div><span className={`turn-chip ${result ? 'finished' : recommendationActive ? 'mine' : 'opponent'}`}>{result ? 'PARTIDA ENCERRADA' : recommendationActive ? 'ANÁLISE ATIVA' : 'AGUARDANDO'}</span><strong>{result ?? (recommendationActive ? `Sua vez: ${activeTurnLabel} jogam.` : `${activeTurnLabel} jogam.`)}</strong></div><span>{viewPly !== null ? `REVISÃO · ${viewPly}/${history.length}` : thinking ? 'ENGINE CALCULANDO' : `LANCE ${moveNumber}`}</span></div>
@@ -652,5 +684,5 @@ export default function App() {
     {pendingPromotion && <div className="modal-backdrop" onClick={() => setPendingPromotion(null)}><div className="promotion-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><span className="section-label">PROMOÇÃO</span><h2>Escolha a peça</h2><div className="promotion-grid">{PROMOTIONS.map(({ piece, label }) => <button key={piece} onClick={() => executeMove(pendingPromotion.from, pendingPromotion.to, piece)}><img src={pieceAsset(pieceSet, liveGame.turn(), piece)} alt={label} /><small>{label}</small></button>)}</div></div></div>}
 
     {showTools && <div className="modal-backdrop" onClick={() => setShowTools(false)}><div className="tools-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}><span className="section-label">IMPORTAR POSIÇÃO / PARTIDA</span><h2>PGN e FEN</h2><textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder="Cole um PGN completo ou uma posição FEN..." /><div className="tool-actions"><button onClick={loadPgn}>Carregar PGN</button><button onClick={loadFen}>Carregar FEN</button><button onClick={() => setImportText(liveGame.fen())}>Usar FEN atual</button><button onClick={() => navigator.clipboard?.writeText(liveGame.fen())}>Copiar FEN</button></div><small>A importação substitui a posição atual. A sessão é salva automaticamente no navegador.</small></div></div>}
-  </main>{projectCredit}</>
+  </main>{themeEffect}{projectCredit}</>
 }

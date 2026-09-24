@@ -7,7 +7,7 @@ const DB_VERSION = 3
 const REVIEW_STORE = 'reviews'
 const GAME_STORE = 'games'
 const TRAINING_STORE = 'training-progress'
-const REVIEW_ALGORITHM_VERSION = 2
+const REVIEW_ALGORITHM_VERSION = 3
 
 export type StoredReview<Row = unknown> = {
   key: string

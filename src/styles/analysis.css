@@ -33,7 +33,7 @@
 .opportunities-card li, .threats-card li { padding-left: 10px; border-left: 2px solid var(--border-strong); color: var(--text-muted); font-size: 13px; line-height: 1.5; }
 .opportunities-card li.mate, .threats-card li.mate { border-color: var(--danger); color: #f0aca0; }
 .opportunities-card li.check, .threats-card li.check { border-color: var(--danger); color: #efaaa0; }
-.opportunities-card li.capture, .threats-card li.capture { border-color: var(--accent); color: #e5cc8f; }
+.opportunities-card li.capture, .threats-card li.capture { border-color: var(--accent); color: #f0b6a5; }
 .opportunities-card li.hanging, .threats-card li.hanging { border-color: var(--positive); color: #b9d6aa; }
 .opportunities-card li.fork, .threats-card li.fork { border-color: var(--blue); color: #a9c6f2; }
 .opportunities-card li.pin, .threats-card li.pin { border-color: var(--blue); color: #a9c6f2; }

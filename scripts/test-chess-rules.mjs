@@ -9,7 +9,7 @@ function play(moves) {
 
 const foolsMate = play(['f3', 'e5', 'g4', 'Qh4#'])
 assert.equal(foolsMate.isGameOver(), true, 'checkmate must end the game')
-assert.equal(foolsMate.isCheckmate(), true, 'Fool\'s mate must be detected')
+assert.equal(foolsMate.isCheckmate(), true, "Fool's mate must be detected")
 assert.equal(foolsMate.inCheck(), true, 'checkmated king must be in check')
 assert.match(foolsMate.history().at(-1), /#$/, 'mate SAN must include #')
 

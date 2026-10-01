@@ -3,8 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ChessBoard from './components/ChessBoard'
 import { openingFor } from './chess-tools'
 import {
-  listGameHistory, listReviews, listTrainingProgress, nextTrainingProgress, putTrainingProgress,
-  type StoredGame, type StoredReview, type TrainingProgress,
+  listGameHistory,
+  listReviews,
+  listTrainingProgress,
+  nextTrainingProgress,
+  putTrainingProgress,
+  type StoredGame,
+  type StoredReview,
+  type TrainingProgress,
 } from './persistence'
 import { ENDGAME_POSITIONS, TACTICAL_POSITIONS, type TrainingPosition } from './training-data'
 import './styles/training.css'
@@ -86,7 +92,12 @@ function relativeDate(timestamp: number, now: number) {
 }
 
 function TrainingBoard({
-  position, pieceSet, progress, now, onGrade, onSolved,
+  position,
+  pieceSet,
+  progress,
+  now,
+  onGrade,
+  onSolved,
 }: {
   position: TrainingPosition
   pieceSet: string
@@ -101,16 +112,11 @@ function TrainingBoard({
   const gradedRef = useRef(false)
   const [solved, setSolved] = useState(false)
   const [hintLevel, setHintLevel] = useState(0)
-  const legalTargets = useMemo(() => selected ? new Set(game.moves({ square: selected, verbose: true }).map((move) => move.to)) : new Set<Square>(), [game, selected])
-
-  useEffect(() => {
-    setGame(new Chess(position.fen))
-    setSelected(null)
-    setFeedback(null)
-    gradedRef.current = false
-    setSolved(false)
-    setHintLevel(0)
-  }, [position.id, position.fen])
+  const legalTargets = useMemo(
+    () =>
+      selected ? new Set(game.moves({ square: selected, verbose: true }).map((move) => move.to)) : new Set<Square>(),
+    [game, selected],
+  )
 
   useEffect(() => {
     if (!solved) return
@@ -136,7 +142,10 @@ function TrainingBoard({
       return
     }
     const candidate = game.moves({ square: selected, verbose: true }).find((move) => move.to === square)
-    if (!candidate) { setSelected(null); return }
+    if (!candidate) {
+      setSelected(null)
+      return
+    }
     const uci = `${candidate.from}${candidate.to}${candidate.promotion ?? ''}`
     const normalized = position.solution.length === 5 && uci.length === 4 ? `${uci}${position.solution[4]}` : uci
     const promotion = (normalized[4] || undefined) as PieceSymbol | undefined
@@ -148,10 +157,18 @@ function TrainingBoard({
     grade(success)
     if (success) {
       setGame(next)
-      setFeedback(alreadyGraded ? `Correto — você encontrou a solução. O erro inicial já foi contabilizado. ${position.explanation}` : `Correto. ${position.explanation}`)
+      setFeedback(
+        alreadyGraded
+          ? `Correto — você encontrou a solução. O erro inicial já foi contabilizado. ${position.explanation}`
+          : `Correto. ${position.explanation}`,
+      )
       setSolved(true)
     } else {
-      setFeedback(alreadyGraded ? 'Ainda não é a melhor jogada. Continue tentando: sua pontuação não sofrerá nova penalidade.' : 'Essa não é a melhor jogada. O erro foi registrado; tente novamente ou use uma dica para encontrar a solução.')
+      setFeedback(
+        alreadyGraded
+          ? 'Ainda não é a melhor jogada. Continue tentando: sua pontuação não sofrerá nova penalidade.'
+          : 'Essa não é a melhor jogada. O erro foi registrado; tente novamente ou use uma dica para encontrar a solução.',
+      )
     }
     setSelected(null)
   }
@@ -161,27 +178,68 @@ function TrainingBoard({
     setHintLevel(2)
   }
 
-  return <div className="training-exercise">
-    <div className="training-board-wrap"><ChessBoard game={game} orientation={position.side} pieceSet={pieceSet} ariaLabel={position.title} selected={selected} legalTargets={legalTargets} onSquareClick={click} showCoordinates /></div>
-    <div className="training-exercise-copy">
-      <span className="eyebrow">{position.category.toUpperCase()}</span>
-      <h2>{position.title}</h2>
-      <p>{position.theme}</p>
-      <div className="training-meta">
-        <span>{progress?.attempts ? `${progress.successes}/${progress.attempts} acertos` : 'Ainda não praticado'}</span>
-        <span>Domínio {mastery(progress)}%</span>
-        {progress?.nextReviewAt ? <span>Próxima: {relativeDate(progress.nextReviewAt, now)}</span> : null}
+  return (
+    <div className="training-exercise">
+      <div className="training-board-wrap">
+        <ChessBoard
+          game={game}
+          orientation={position.side}
+          pieceSet={pieceSet}
+          ariaLabel={position.title}
+          selected={selected}
+          legalTargets={legalTargets}
+          onSquareClick={click}
+          showCoordinates
+        />
       </div>
-      {feedback && <div className={feedback.startsWith('Correto') ? 'training-feedback success' : 'training-feedback'}>{feedback}</div>}
-      {!solved && <div className="training-hints">
-        <button onClick={() => setHintLevel((value) => Math.max(value, 1))} disabled={hintLevel >= 1}>Dica 1</button>
-        <button onClick={() => setHintLevel((value) => Math.max(value, 2))} disabled={hintLevel >= 2}>Dica 2</button>
-        {hintLevel >= 1 && <p>Procure o padrão: <strong>{position.theme}</strong>.</p>}
-        {hintLevel >= 2 && <p>Considere primeiro a peça em <strong>{position.solution.slice(0, 2)}</strong>.</p>}
-      </div>}
-      <details onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) revealSolution() }}><summary>Ver solução</summary><code>{position.solution}</code><p>{position.explanation}</p></details>
+      <div className="training-exercise-copy">
+        <span className="eyebrow">{position.category.toUpperCase()}</span>
+        <h2>{position.title}</h2>
+        <p>{position.theme}</p>
+        <div className="training-meta">
+          <span>
+            {progress?.attempts ? `${progress.successes}/${progress.attempts} acertos` : 'Ainda não praticado'}
+          </span>
+          <span>Domínio {mastery(progress)}%</span>
+          {progress?.nextReviewAt ? <span>Próxima: {relativeDate(progress.nextReviewAt, now)}</span> : null}
+        </div>
+        {feedback && (
+          <div className={feedback.startsWith('Correto') ? 'training-feedback success' : 'training-feedback'}>
+            {feedback}
+          </div>
+        )}
+        {!solved && (
+          <div className="training-hints">
+            <button onClick={() => setHintLevel((value) => Math.max(value, 1))} disabled={hintLevel >= 1}>
+              Dica 1
+            </button>
+            <button onClick={() => setHintLevel((value) => Math.max(value, 2))} disabled={hintLevel >= 2}>
+              Dica 2
+            </button>
+            {hintLevel >= 1 && (
+              <p>
+                Procure o padrão: <strong>{position.theme}</strong>.
+              </p>
+            )}
+            {hintLevel >= 2 && (
+              <p>
+                Considere primeiro a peça em <strong>{position.solution.slice(0, 2)}</strong>.
+              </p>
+            )}
+          </div>
+        )}
+        <details
+          onToggle={(event) => {
+            if ((event.currentTarget as HTMLDetailsElement).open) revealSolution()
+          }}
+        >
+          <summary>Ver solução</summary>
+          <code>{position.solution}</code>
+          <p>{position.explanation}</p>
+        </details>
+      </div>
     </div>
-  </div>
+  )
 }
 
 export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
@@ -194,16 +252,20 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
   const [clock, setClock] = useState(() => Date.now())
   const [session, setSession] = useState<SessionStats>({ answered: 0, correct: 0, streak: 0, bestStreak: 0 })
 
-  async function refresh() {
-    const [nextReviews, nextGames, nextProgress] = await Promise.all([
-      listReviews<ReviewRow>(), listGameHistory(), listTrainingProgress(),
-    ])
-    setReviews(nextReviews)
-    setGames(nextGames)
-    setProgress(nextProgress)
-  }
-
-  useEffect(() => { void refresh() }, [])
+  useEffect(() => {
+    let active = true
+    Promise.all([listReviews<ReviewRow>(), listGameHistory(), listTrainingProgress()]).then(
+      ([nextReviews, nextGames, nextProgress]) => {
+        if (!active) return
+        setReviews(nextReviews)
+        setGames(nextGames)
+        setProgress(nextProgress)
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [])
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 60_000)
     return () => window.clearInterval(timer)
@@ -211,7 +273,10 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
 
   const errors = useMemo(() => errorPuzzles(reviews), [reviews])
   const progressMap = useMemo(() => new Map(progress.map((item) => [item.id, item])), [progress])
-  const dueErrors = useMemo(() => errors.filter((puzzle) => (progressMap.get(puzzle.id)?.nextReviewAt ?? 0) <= clock), [errors, progressMap, clock])
+  const dueErrors = useMemo(
+    () => errors.filter((puzzle) => (progressMap.get(puzzle.id)?.nextReviewAt ?? 0) <= clock),
+    [errors, progressMap, clock],
+  )
 
   const focusQueue = useMemo(() => {
     const all: TrainingPosition[] = [...errors, ...TACTICAL_POSITIONS, ...ENDGAME_POSITIONS]
@@ -231,12 +296,16 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
       .slice(0, SESSION_TARGET)
   }, [errors, progressMap, clock])
 
-  const orderedErrors = useMemo(() => [...errors].sort((a, b) => {
-    const dueA = (progressMap.get(a.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
-    const dueB = (progressMap.get(b.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
-    if (dueA !== dueB) return dueB - dueA
-    return b.loss - a.loss
-  }), [errors, progressMap, clock])
+  const orderedErrors = useMemo(
+    () =>
+      [...errors].sort((a, b) => {
+        const dueA = (progressMap.get(a.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
+        const dueB = (progressMap.get(b.id)?.nextReviewAt ?? 0) <= clock ? 1 : 0
+        if (dueA !== dueB) return dueB - dueA
+        return b.loss - a.loss
+      }),
+    [errors, progressMap, clock],
+  )
 
   // Frozen per area visit: focusQueue/orderedErrors depend on progress, which changes after every
   // grade. Recomputing baseList live would remove/reorder the just-answered item and shift the
@@ -245,23 +314,36 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
     if (area === 'focus') return focusQueue
     if (area === 'errors') return orderedErrors
     return []
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally snapshotted per area (see above)
   }, [area])
-  const baseList: TrainingPosition[] = area === 'focus' || area === 'errors' ? sessionList : area === 'tactics' ? TACTICAL_POSITIONS : area === 'endgames' ? ENDGAME_POSITIONS : []
-  const themes = useMemo(() => [...new Set(baseList.map((item) => item.theme))].sort(), [area, errors.length])
-  const currentList = themeFilter === 'all' || area === 'focus' || area === 'errors' ? baseList : baseList.filter((item) => item.theme === themeFilter)
+  const baseList: TrainingPosition[] =
+    area === 'focus' || area === 'errors'
+      ? sessionList
+      : area === 'tactics'
+        ? TACTICAL_POSITIONS
+        : area === 'endgames'
+          ? ENDGAME_POSITIONS
+          : []
+  const themes = [...new Set(baseList.map((item) => item.theme))].sort()
+  const currentList =
+    themeFilter === 'all' || area === 'focus' || area === 'errors'
+      ? baseList
+      : baseList.filter((item) => item.theme === themeFilter)
   const current = currentList.length ? currentList[index % currentList.length] : null
 
-  useEffect(() => {
+  function selectArea(next: Area) {
+    setArea(next)
     setIndex(0)
     setThemeFilter('all')
-  }, [area])
+  }
 
   const weakness = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const review of reviews) for (const row of review.rows) {
-      if (!['Erro', 'Erro grave'].includes(row.label)) continue
-      for (const idea of row.ideas.slice(0, 3)) counts.set(idea, (counts.get(idea) ?? 0) + 1)
-    }
+    for (const review of reviews)
+      for (const row of review.rows) {
+        if (!['Erro', 'Erro grave'].includes(row.label)) continue
+        for (const idea of row.ideas.slice(0, 3)) counts.set(idea, (counts.get(idea) ?? 0) + 1)
+      }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
   }, [reviews])
 
@@ -270,9 +352,13 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
     for (const game of games) {
       const name = detectOpening(game.pgn)
       const row = grouped.get(name) ?? { games: 0, total: 0 }
-      row.games += 1; row.total += game.accuracy; grouped.set(name, row)
+      row.games += 1
+      row.total += game.accuracy
+      grouped.set(name, row)
     }
-    return [...grouped.entries()].map(([name, value]) => ({ name, games: value.games, accuracy: Math.round(value.total / value.games) })).sort((a, b) => b.games - a.games)
+    return [...grouped.entries()]
+      .map(([name, value]) => ({ name, games: value.games, accuracy: Math.round(value.total / value.games) }))
+      .sort((a, b) => b.games - a.games)
   }, [games])
 
   const masteryByTheme = useMemo(() => {
@@ -283,13 +369,15 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
       values.push(mastery(progressMap.get(position.id)))
       grouped.set(position.theme, values)
     }
-    return [...grouped.entries()].map(([theme, values]) => ({ theme, value: Math.round(values.reduce((a, b) => a + b, 0) / values.length) })).sort((a, b) => a.value - b.value)
+    return [...grouped.entries()]
+      .map(([theme, values]) => ({ theme, value: Math.round(values.reduce((a, b) => a + b, 0) / values.length) }))
+      .sort((a, b) => a.value - b.value)
   }, [progressMap])
 
   const solved = progress.reduce((sum, item) => sum + item.successes, 0)
   const attempts = progress.reduce((sum, item) => sum + item.attempts, 0)
-  const accuracy = attempts ? Math.round(solved / attempts * 100) : 0
-  const sessionAccuracy = session.answered ? Math.round(session.correct / session.answered * 100) : 0
+  const accuracy = attempts ? Math.round((solved / attempts) * 100) : 0
+  const sessionAccuracy = session.answered ? Math.round((session.correct / session.answered) * 100) : 0
 
   async function record(position: TrainingPosition, success: boolean) {
     const currentProgress = progressMap.get(position.id)
@@ -312,51 +400,193 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
     setIndex((value) => value + 1)
   }
 
-  return <main className="training-shell">
-    <header className="training-header">
-      <div><span className="eyebrow">TREINO PERSONALIZADO</span><h1>Centro de Treino</h1><p>Treino adaptativo com puzzles das suas partidas, repetição espaçada, tática e finais.</p></div>
-      <div className="training-nav">
-        <button className={area === 'overview' ? 'active' : ''} onClick={() => setArea('overview')}>Progresso</button>
-        <button className={area === 'focus' ? 'active' : ''} onClick={() => setArea('focus')}>Recomendado</button>
-        <button className={area === 'errors' ? 'active' : ''} onClick={() => setArea('errors')}>Seus erros ({errors.length})</button>
-        <button className={area === 'tactics' ? 'active' : ''} onClick={() => setArea('tactics')}>Táticas</button>
-        <button className={area === 'endgames' ? 'active' : ''} onClick={() => setArea('endgames')}>Finais</button>
-      </div>
-    </header>
+  return (
+    <main className="training-shell">
+      <header className="training-header">
+        <div>
+          <span className="eyebrow">TREINO PERSONALIZADO</span>
+          <h1>Centro de Treino</h1>
+          <p>Treino adaptativo com puzzles das suas partidas, repetição espaçada, tática e finais.</p>
+        </div>
+        <div className="training-nav">
+          <button className={area === 'overview' ? 'active' : ''} onClick={() => selectArea('overview')}>
+            Progresso
+          </button>
+          <button className={area === 'focus' ? 'active' : ''} onClick={() => selectArea('focus')}>
+            Recomendado
+          </button>
+          <button className={area === 'errors' ? 'active' : ''} onClick={() => selectArea('errors')}>
+            Seus erros ({errors.length})
+          </button>
+          <button className={area === 'tactics' ? 'active' : ''} onClick={() => selectArea('tactics')}>
+            Táticas
+          </button>
+          <button className={area === 'endgames' ? 'active' : ''} onClick={() => selectArea('endgames')}>
+            Finais
+          </button>
+        </div>
+      </header>
 
-    {area === 'overview' ? <>
-      <section className="training-metrics">
-        <div><span>Partidas revisadas</span><strong>{games.length}</strong></div>
-        <div><span>Puzzles próprios</span><strong>{errors.length}</strong></div>
-        <div><span>Para revisar agora</span><strong>{dueErrors.length}</strong></div>
-        <div><span>Precisão no treino</span><strong>{accuracy}%</strong></div>
-      </section>
-      <section className="training-dashboard-grid">
-        <article className="training-card"><div className="card-title"><strong>Mapa de fraquezas</strong><span>erros recorrentes</span></div>
-          {weakness.length ? <div className="weakness-list">{weakness.map(([name, count]) => <div key={name}><span>{name}</span><b>{count}</b><i style={{ width: `${Math.min(100, count / weakness[0][1] * 100)}%` }} /></div>)}</div> : <p className="empty-state">Revise partidas para gerar seu mapa de fraquezas.</p>}
-        </article>
-        <article className="training-card"><div className="card-title"><strong>Domínio por tema</strong><span>mais fracos primeiro</span></div>
-          <div className="mastery-list">{masteryByTheme.map((item) => <div key={item.theme}><span>{item.theme}</span><b>{item.value}%</b><i style={{ width: `${item.value}%` }} /></div>)}</div>
-        </article>
-        <article className="training-card"><div className="card-title"><strong>Desempenho por abertura</strong><span>partidas revisadas</span></div>
-          {openingStats.length ? <div className="opening-stats">{openingStats.slice(0, 8).map((item) => <div key={item.name}><span>{item.name}</span><b>{item.accuracy}%</b><small>{item.games} partida(s)</small></div>)}</div> : <p className="empty-state">Nenhuma partida revisada disponível.</p>}
-        </article>
-        <article className="training-card training-session-summary"><div className="card-title"><strong>Sessão atual</strong><span>meta {SESSION_TARGET}</span></div>
-          <strong>{session.answered}/{SESSION_TARGET}</strong><p>{sessionAccuracy}% de primeira · melhor sequência {session.bestStreak}</p>
-          <div className="session-progress"><i style={{ width: `${Math.min(100, session.answered / SESSION_TARGET * 100)}%` }} /></div>
-        </article>
-      </section>
-      <section className="training-card training-next"><div><span className="eyebrow">RECOMENDAÇÃO</span><h2>{dueErrors.length ? `${dueErrors.length} erro(s) pessoais vencidos` : 'Fila adaptativa pronta'}</h2><p>Prioriza revisões vencidas, seus próprios erros e temas com menor domínio.</p></div><button onClick={() => setArea('focus')}>Iniciar sessão</button></section>
-    </> : current ? <>
-      <section className="training-session-bar">
-        <div><span>Sessão</span><b>{session.answered}/{SESSION_TARGET}</b></div>
-        <div><span>Primeira tentativa</span><b>{sessionAccuracy}%</b></div>
-        <div><span>Sequência</span><b>{session.streak}</b></div>
-        <div className="session-progress"><i style={{ width: `${Math.min(100, session.answered / SESSION_TARGET * 100)}%` }} /></div>
-      </section>
-      {(area === 'tactics' || area === 'endgames') && themes.length > 1 && <label className="training-filter">Tema <select value={themeFilter} onChange={(event) => setThemeFilter(event.target.value)}><option value="all">Todos</option>{themes.map((theme) => <option key={theme} value={theme}>{theme}</option>)}</select></label>}
-      <TrainingBoard key={current.id} position={current} pieceSet={pieceSet} progress={progressMap.get(current.id)} now={clock} onGrade={(success) => void record(current, success)} onSolved={advance} />
-      <div className="training-pager"><button onClick={() => setIndex((value) => Math.max(0, value - 1))}>Anterior</button><span>{(index % currentList.length) + 1} / {currentList.length}</span><button onClick={advance}>Próximo</button></div>
-    </> : <section className="training-card"><h2>{area === 'focus' ? 'Revisões em dia' : 'Nenhum exercício disponível'}</h2><p>{area === 'focus' ? 'A fila adaptativa não antecipa exercícios agendados. Você ainda pode praticar livremente em Táticas, Finais ou Seus erros.' : 'Revise uma partida para gerar puzzles próprios ou altere o filtro de treino.'}</p></section>}
-  </main>
+      {area === 'overview' ? (
+        <>
+          <section className="training-metrics">
+            <div>
+              <span>Partidas revisadas</span>
+              <strong>{games.length}</strong>
+            </div>
+            <div>
+              <span>Puzzles próprios</span>
+              <strong>{errors.length}</strong>
+            </div>
+            <div>
+              <span>Para revisar agora</span>
+              <strong>{dueErrors.length}</strong>
+            </div>
+            <div>
+              <span>Precisão no treino</span>
+              <strong>{accuracy}%</strong>
+            </div>
+          </section>
+          <section className="training-dashboard-grid">
+            <article className="training-card">
+              <div className="card-title">
+                <strong>Mapa de fraquezas</strong>
+                <span>erros recorrentes</span>
+              </div>
+              {weakness.length ? (
+                <div className="weakness-list">
+                  {weakness.map(([name, count]) => (
+                    <div key={name}>
+                      <span>{name}</span>
+                      <b>{count}</b>
+                      <i style={{ width: `${Math.min(100, (count / weakness[0][1]) * 100)}%` }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-state">Revise partidas para gerar seu mapa de fraquezas.</p>
+              )}
+            </article>
+            <article className="training-card">
+              <div className="card-title">
+                <strong>Domínio por tema</strong>
+                <span>mais fracos primeiro</span>
+              </div>
+              <div className="mastery-list">
+                {masteryByTheme.map((item) => (
+                  <div key={item.theme}>
+                    <span>{item.theme}</span>
+                    <b>{item.value}%</b>
+                    <i style={{ width: `${item.value}%` }} />
+                  </div>
+                ))}
+              </div>
+            </article>
+            <article className="training-card">
+              <div className="card-title">
+                <strong>Desempenho por abertura</strong>
+                <span>partidas revisadas</span>
+              </div>
+              {openingStats.length ? (
+                <div className="opening-stats">
+                  {openingStats.slice(0, 8).map((item) => (
+                    <div key={item.name}>
+                      <span>{item.name}</span>
+                      <b>{item.accuracy}%</b>
+                      <small>{item.games} partida(s)</small>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-state">Nenhuma partida revisada disponível.</p>
+              )}
+            </article>
+            <article className="training-card training-session-summary">
+              <div className="card-title">
+                <strong>Sessão atual</strong>
+                <span>meta {SESSION_TARGET}</span>
+              </div>
+              <strong>
+                {session.answered}/{SESSION_TARGET}
+              </strong>
+              <p>
+                {sessionAccuracy}% de primeira · melhor sequência {session.bestStreak}
+              </p>
+              <div className="session-progress">
+                <i style={{ width: `${Math.min(100, (session.answered / SESSION_TARGET) * 100)}%` }} />
+              </div>
+            </article>
+          </section>
+          <section className="training-card training-next">
+            <div>
+              <span className="eyebrow">RECOMENDAÇÃO</span>
+              <h2>{dueErrors.length ? `${dueErrors.length} erro(s) pessoais vencidos` : 'Fila adaptativa pronta'}</h2>
+              <p>Prioriza revisões vencidas, seus próprios erros e temas com menor domínio.</p>
+            </div>
+            <button onClick={() => selectArea('focus')}>Iniciar sessão</button>
+          </section>
+        </>
+      ) : current ? (
+        <>
+          <section className="training-session-bar">
+            <div>
+              <span>Sessão</span>
+              <b>
+                {session.answered}/{SESSION_TARGET}
+              </b>
+            </div>
+            <div>
+              <span>Primeira tentativa</span>
+              <b>{sessionAccuracy}%</b>
+            </div>
+            <div>
+              <span>Sequência</span>
+              <b>{session.streak}</b>
+            </div>
+            <div className="session-progress">
+              <i style={{ width: `${Math.min(100, (session.answered / SESSION_TARGET) * 100)}%` }} />
+            </div>
+          </section>
+          {(area === 'tactics' || area === 'endgames') && themes.length > 1 && (
+            <label className="training-filter">
+              Tema{' '}
+              <select value={themeFilter} onChange={(event) => setThemeFilter(event.target.value)}>
+                <option value="all">Todos</option>
+                {themes.map((theme) => (
+                  <option key={theme} value={theme}>
+                    {theme}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <TrainingBoard
+            key={current.id}
+            position={current}
+            pieceSet={pieceSet}
+            progress={progressMap.get(current.id)}
+            now={clock}
+            onGrade={(success) => void record(current, success)}
+            onSolved={advance}
+          />
+          <div className="training-pager">
+            <button onClick={() => setIndex((value) => Math.max(0, value - 1))}>Anterior</button>
+            <span>
+              {(index % currentList.length) + 1} / {currentList.length}
+            </span>
+            <button onClick={advance}>Próximo</button>
+          </div>
+        </>
+      ) : (
+        <section className="training-card">
+          <h2>{area === 'focus' ? 'Revisões em dia' : 'Nenhum exercício disponível'}</h2>
+          <p>
+            {area === 'focus'
+              ? 'A fila adaptativa não antecipa exercícios agendados. Você ainda pode praticar livremente em Táticas, Finais ou Seus erros.'
+              : 'Revise uma partida para gerar puzzles próprios ou altere o filtro de treino.'}
+          </p>
+        </section>
+      )}
+    </main>
+  )
 }

@@ -13,7 +13,10 @@ export function useVideoAspectRatio(videoRef: RefObject<HTMLVideoElement | null>
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !stream) { setRatio(null); return }
+    if (!video || !stream) {
+      setRatio(null)
+      return
+    }
     const update = () => setRatio(video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : null)
     update()
     video.addEventListener('loadedmetadata', update)

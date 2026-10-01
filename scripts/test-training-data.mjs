@@ -22,9 +22,9 @@ for (const [, fen, side, uci] of positions) {
   const from = uci.slice(0, 2)
   const to = uci.slice(2, 4)
   const promotion = uci[4]
-  const legal = game.moves({ square: from, verbose: true }).some((move) =>
-    move.to === to && (!promotion || move.promotion === promotion)
-  )
+  const legal = game
+    .moves({ square: from, verbose: true })
+    .some((move) => move.to === to && (!promotion || move.promotion === promotion))
   assert.equal(legal, true, `illegal training solution ${uci} for ${fen}`)
 }
 

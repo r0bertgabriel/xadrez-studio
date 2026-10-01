@@ -16,6 +16,22 @@ export type EngineAnalysis = {
   lines: EngineLine[]
 }
 
+/** Live snapshot of a running search, emitted for every UCI `info` line. */
+export type SearchProgress = {
+  fen: string
+  /** Principal variations found so far, ordered by MultiPV rank. */
+  lines: EngineLine[]
+  depth: number
+  nodes: number | null
+  nps: number | null
+  timeMs: number | null
+  /** Root move being searched right now (UCI), when Stockfish reports it. */
+  currMove: string | null
+  currMoveNumber: number | null
+  done: boolean
+}
+export type SearchListener = (progress: SearchProgress) => void
+
 type Pending = {
   resolve: (value: EngineAnalysis) => void
   reject: (reason?: unknown) => void
@@ -23,16 +39,49 @@ type Pending = {
   fen: string
   timeoutId: number
   generation: number
+  depth: number
+  nodes: number | null
+  nps: number | null
+  timeMs: number | null
+  currMove: string | null
+  currMoveNumber: number | null
 }
 
 export type StockfishVariant = 'lite' | 'full'
 
-const ENGINE_PATHS: Record<StockfishVariant, string> = {
-  lite: '/stockfish/stockfish-19-lite-single.js',
-  full: '/stockfish/stockfish-19-single.js',
+type EngineBuild = { path: string; threaded: boolean }
+
+const SINGLE_THREADED_BUILDS: Record<StockfishVariant, EngineBuild> = {
+  lite: { path: '/stockfish/stockfish-19-lite-single.js', threaded: false },
+  full: { path: '/stockfish/stockfish-19-single.js', threaded: false },
+}
+// The full multithreaded build (~94 MB) is not shipped; only lite has a threaded variant.
+const MULTI_THREADED_BUILDS: Partial<Record<StockfishVariant, EngineBuild>> = {
+  lite: { path: '/stockfish/stockfish-19-lite.js', threaded: true },
 }
 const ENGINE_READY_TIMEOUT_MS = 12_000
 const ENGINE_SEARCH_TIMEOUT_MS = 30_000
+const MAX_ENGINE_THREADS = 8
+const THREADED_HASH_MB = 64
+
+function supportsThreadedEngine() {
+  return typeof SharedArrayBuffer !== 'undefined' && globalThis.crossOriginIsolated === true
+}
+
+function selectBuild(variant: StockfishVariant): EngineBuild {
+  const threaded = MULTI_THREADED_BUILDS[variant]
+  return threaded && supportsThreadedEngine() ? threaded : SINGLE_THREADED_BUILDS[variant]
+}
+
+/** Leaves one core free for the UI thread. */
+function engineThreadCount() {
+  const cores = navigator.hardwareConcurrency || 2
+  return Math.max(1, Math.min(MAX_ENGINE_THREADS, cores - 1))
+}
+
+function sortedLines(pending: Pending) {
+  return [...pending.lines.values()].sort((a, b) => a.multipv - b.multipv)
+}
 
 export class AnalysisCancelledError extends Error {
   constructor() {
@@ -50,11 +99,27 @@ export class StockfishEngine {
   private workerFailed = false
   private analysisGeneration = 0
   private readonly variant: StockfishVariant
+  private build: EngineBuild
+  private readonly searchListeners = new Set<SearchListener>()
 
   constructor(variant: StockfishVariant = 'lite') {
     this.variant = variant
+    this.build = selectBuild(variant)
     this.worker = this.createWorker()
-    this.ready = this.initializeWorker(this.worker)
+    this.ready = this.startWorker()
+  }
+
+  /** Receives live progress of every search; returns the unsubscribe function. */
+  subscribe(listener: SearchListener) {
+    this.searchListeners.add(listener)
+    return () => {
+      this.searchListeners.delete(listener)
+    }
+  }
+
+  /** Number of search threads the running build uses (1 for single-threaded builds). */
+  get threads() {
+    return this.build.threaded ? engineThreadCount() : 1
   }
 
   analyze(fen: string, depth = 15, multiPv = 3): Promise<EngineAnalysis> {
@@ -129,12 +194,26 @@ export class StockfishEngine {
   }
 
   private createWorker() {
-    const worker = new Worker(ENGINE_PATHS[this.variant])
+    const worker = new Worker(this.build.path)
     worker.onmessage = (event) => this.handleMessage(String(event.data))
     worker.onerror = () => {
       this.markWorkerFailed(new Error('O Web Worker do Stockfish falhou durante a execução.'), worker)
     }
     return worker
+  }
+
+  /** Starts the selected build, falling back to the single-threaded one if threads fail to boot. */
+  private startWorker(): Promise<void> {
+    const promise = this.initializeWorker(this.worker).catch((error) => {
+      if (!this.build.threaded || this.destroyed) throw error
+      this.worker.terminate()
+      this.build = SINGLE_THREADED_BUILDS[this.variant]
+      this.worker = this.createWorker()
+      this.workerFailed = false
+      return this.initializeWorker(this.worker)
+    })
+    promise.catch(() => {})
+    return promise
   }
 
   private initializeWorker(worker: Worker): Promise<void> {
@@ -173,6 +252,10 @@ export class StockfishEngine {
           return
         }
         if (message === 'uciok') {
+          if (this.build.threaded) {
+            worker.postMessage(`setoption name Threads value ${engineThreadCount()}`)
+            worker.postMessage(`setoption name Hash value ${THREADED_HASH_MB}`)
+          }
           worker.postMessage('isready')
           return
         }
@@ -260,7 +343,20 @@ export class StockfishEngine {
         pending.reject(new Error('A análise do Stockfish excedeu o tempo limite.'))
       }, ENGINE_SEARCH_TIMEOUT_MS)
 
-      this.pending = { resolve, reject, lines: new Map(), fen, timeoutId, generation }
+      this.pending = {
+        resolve,
+        reject,
+        lines: new Map(),
+        fen,
+        timeoutId,
+        generation,
+        depth: 0,
+        nodes: null,
+        nps: null,
+        timeMs: null,
+        currMove: null,
+        currMoveNumber: null,
+      }
       this.worker.postMessage(command)
     })
   }
@@ -291,7 +387,10 @@ export class StockfishEngine {
 
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
     const next = this.queue.then(job, job)
-    this.queue = next.then(() => undefined, () => undefined)
+    this.queue = next.then(
+      () => undefined,
+      () => undefined,
+    )
     return next
   }
 
@@ -307,30 +406,45 @@ export class StockfishEngine {
       return
     }
 
-    if (message.startsWith('info ') && message.includes(' pv ')) {
-      const multipv = Number(message.match(/\bmultipv (\d+)/)?.[1] ?? '1')
-      const depth = Number(message.match(/\bdepth (\d+)/)?.[1] ?? '0')
-      const selDepthMatch = message.match(/\bseldepth (\d+)/)
-      const cpMatch = message.match(/\bscore cp (-?\d+)/)
-      const mateMatch = message.match(/\bscore mate (-?\d+)/)
+    if (message.startsWith('info ') && !message.startsWith('info string')) {
+      const pending = this.pending
+      const depthMatch = message.match(/\bdepth (\d+)/)
       const nodesMatch = message.match(/\bnodes (\d+)/)
       const npsMatch = message.match(/\bnps (\d+)/)
       const timeMatch = message.match(/\btime (\d+)/)
-      const pvRaw = message.split(' pv ')[1] ?? ''
-      const sideToMove = this.pending.fen.split(' ')[1]
-      const perspective = sideToMove === 'w' ? 1 : -1
+      const currMoveMatch = message.match(/\bcurrmove (\S+)/)
+      const currMoveNumberMatch = message.match(/\bcurrmovenumber (\d+)/)
+      if (depthMatch) pending.depth = Math.max(pending.depth, Number(depthMatch[1]))
+      if (nodesMatch) pending.nodes = Number(nodesMatch[1])
+      if (npsMatch) pending.nps = Number(npsMatch[1])
+      if (timeMatch) pending.timeMs = Number(timeMatch[1])
+      if (currMoveMatch) {
+        pending.currMove = currMoveMatch[1]
+        pending.currMoveNumber = currMoveNumberMatch ? Number(currMoveNumberMatch[1]) : null
+      }
 
-      this.pending.lines.set(multipv, {
-        multipv,
-        depth,
-        selDepth: selDepthMatch ? Number(selDepthMatch[1]) : null,
-        scoreCp: cpMatch ? Number(cpMatch[1]) * perspective : null,
-        mate: mateMatch ? Number(mateMatch[1]) * perspective : null,
-        nodes: nodesMatch ? Number(nodesMatch[1]) : null,
-        nps: npsMatch ? Number(npsMatch[1]) : null,
-        timeMs: timeMatch ? Number(timeMatch[1]) : null,
-        pv: pvRaw.trim().split(/\s+/).filter(Boolean),
-      })
+      if (message.includes(' pv ')) {
+        const multipv = Number(message.match(/\bmultipv (\d+)/)?.[1] ?? '1')
+        const selDepthMatch = message.match(/\bseldepth (\d+)/)
+        const cpMatch = message.match(/\bscore cp (-?\d+)/)
+        const mateMatch = message.match(/\bscore mate (-?\d+)/)
+        const pvRaw = message.split(' pv ')[1] ?? ''
+        const sideToMove = pending.fen.split(' ')[1]
+        const perspective = sideToMove === 'w' ? 1 : -1
+
+        pending.lines.set(multipv, {
+          multipv,
+          depth: Number(depthMatch?.[1] ?? '0'),
+          selDepth: selDepthMatch ? Number(selDepthMatch[1]) : null,
+          scoreCp: cpMatch ? Number(cpMatch[1]) * perspective : null,
+          mate: mateMatch ? Number(mateMatch[1]) * perspective : null,
+          nodes: nodesMatch ? Number(nodesMatch[1]) : null,
+          nps: npsMatch ? Number(npsMatch[1]) : null,
+          timeMs: timeMatch ? Number(timeMatch[1]) : null,
+          pv: pvRaw.trim().split(/\s+/).filter(Boolean),
+        })
+      }
+      this.emitProgress(pending, false)
       return
     }
 
@@ -339,11 +453,28 @@ export class StockfishEngine {
       const pending = this.pending
       this.pending = null
       window.clearTimeout(pending.timeoutId)
+      this.emitProgress(pending, true)
       pending.resolve({
         bestMove,
         ponder: ponderToken === 'ponder' ? ponder : undefined,
-        lines: [...pending.lines.values()].sort((a, b) => a.multipv - b.multipv),
+        lines: sortedLines(pending),
       })
     }
+  }
+
+  private emitProgress(pending: Pending, done: boolean) {
+    if (!this.searchListeners.size) return
+    const progress: SearchProgress = {
+      fen: pending.fen,
+      lines: sortedLines(pending),
+      depth: pending.depth,
+      nodes: pending.nodes,
+      nps: pending.nps,
+      timeMs: pending.timeMs,
+      currMove: pending.currMove,
+      currMoveNumber: pending.currMoveNumber,
+      done,
+    }
+    for (const listener of this.searchListeners) listener(progress)
   }
 }

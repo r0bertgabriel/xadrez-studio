@@ -53,7 +53,7 @@ As capturas abaixo apresentam a interface atual do Xadrez Studio.
 
 ## O que é o Stockfish?
 
-O **Stockfish** é um motor de xadrez (*chess engine*) livre e de código aberto que calcula e avalia posições para encontrar lances fortes. Diferentemente de um aplicativo para jogar xadrez, ele não fornece por si só uma interface de tabuleiro: recebe uma posição, examina sequências possíveis de lances e devolve resultados que outros programas podem apresentar ao jogador.
+O **Stockfish** é um motor de xadrez (_chess engine_) livre e de código aberto que calcula e avalia posições para encontrar lances fortes. Diferentemente de um aplicativo para jogar xadrez, ele não fornece por si só uma interface de tabuleiro: recebe uma posição, examina sequências possíveis de lances e devolve resultados que outros programas podem apresentar ao jogador.
 
 Neste projeto, o **Stockfish 19 Lite** é o motor responsável pelas recomendações e avaliações. O aplicativo envia a posição atual em **FEN** (uma notação textual que descreve o estado do tabuleiro) ao motor usando o protocolo **UCI**, e recebe análises que a interface apresenta em forma de melhores lances, variantes, avaliação e alertas de mate. O motor executa no próprio navegador usando **WebAssembly** e um **Web Worker**, sem exigir uma API paga ou enviar posições a um servidor de análise.
 
@@ -66,18 +66,17 @@ O Stockfish é um **motor de busca e avaliação de posições**, não um modelo
 
 ## Funcionalidades
 
-| Área | O que oferece |
-| --- | --- |
-| **Coach** | Escolha de brancas ou pretas, recomendações para o lado escolhido, seta do melhor lance, avaliação, variantes MultiPV, profundidade configurável e explicações heurísticas. Os dois lados são movimentados manualmente. |
-| **Análise livre** | Análise contínua dos dois lados, navegação no histórico, importação/exportação de PGN e carregamento/cópia de FEN. |
-| **Revisão pós-partida** | Classificação de lances, perda estimada em centipawns, precisão estimada, gráfico de avaliação, comparação com o melhor lance e treino dos erros identificados. |
-| **Professor de Aberturas** | Cursos com explicações lance a lance e modo de treino ativo, com verificação de desvios da linha estudada. |
-| **Centro de Treino** | Exercícios de tática e finais, puzzles gerados a partir de erros em partidas revisadas e repetição espaçada do progresso. |
-| **Análise da tela ao vivo** | Compartilhamento de tela, calibração de quatro cantos, identificação de mudanças nas casas e correspondência com lances legais, com resolução manual quando necessário. |
-| **Tabuleiro por câmera — experimental** | Acesso à câmera, seleção do dispositivo, orientação e calibração visual de uma grade 8×8; reconhecimento automático ainda não implementado. |
+| Área                                    | O que oferece                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Coach**                               | Escolha de brancas ou pretas, recomendações para o lado escolhido, seta do melhor lance, avaliação, variantes MultiPV, profundidade configurável, explicações heurísticas e a visualização **Stockfish ao vivo**, que mostra a árvore de busca crescendo e um esquema da rede neural NNUE durante o cálculo. Os dois lados são movimentados manualmente. |
+| **Análise livre**                       | Análise contínua dos dois lados, navegação no histórico, importação/exportação de PGN, carregamento/cópia de FEN e importação das partidas recentes do Lichess ou do Chess.com.                                                                                                                                                                          |
+| **Revisão pós-partida**                 | Classificação de lances, perda estimada em centipawns, precisão estimada, gráfico de avaliação, comparação com o melhor lance e treino dos erros identificados.                                                                                                                                                                                          |
+| **Professor de Aberturas**              | Cursos com explicações lance a lance, modo de treino ativo com verificação de desvios, repertório próprio importado de PGN e consulta à base ECO (cerca de 3.800 posições nomeadas).                                                                                                                                                                     |
+| **Centro de Treino**                    | Exercícios de tática e finais, puzzles gerados a partir de erros em partidas revisadas e repetição espaçada do progresso.                                                                                                                                                                                                                                |
+| **Análise da tela ao vivo**             | Compartilhamento de tela, calibração de quatro cantos, identificação de mudanças nas casas e correspondência com lances legais, com resolução manual quando necessário.                                                                                                                                                                                  |
+| **Tabuleiro por câmera — experimental** | Acesso à câmera, seleção do dispositivo, orientação e calibração visual de uma grade 8×8; reconhecimento automático ainda não implementado.                                                                                                                                                                                                              |
 
-O tabuleiro principal também oferece movimento por clique ou arrastar/soltar, indicação de movimentos legais, promoção, destaque de xeque, detecção de fim de partida e personalização de peças e cores. A aplicação é responsiva para desktop e dispositivos móveis.
-
+O tabuleiro principal também oferece movimento por clique ou arrastar/soltar, indicação de movimentos legais, promoção, destaque de xeque, detecção de fim de partida e personalização de peças e cores. Também pode ser usado só pelo teclado: <kbd>Tab</kbd> leva ao tabuleiro, as setas percorrem as casas, <kbd>Enter</kbd> seleciona e move, e cada lance é anunciado para leitores de tela. A aplicação é responsiva para desktop e dispositivos móveis.
 
 ## Visão geral dos fluxos
 
@@ -146,11 +145,13 @@ flowchart TD
 
 - **Interface:** React 19, TypeScript e Vite 7.
 - **Regras e notação:** `chess.js`.
-- **Motor:** Stockfish 19 Lite, via Web Worker/WebAssembly e protocolo UCI.
+- **Motor:** Stockfish 19 Lite, via Web Worker/WebAssembly e protocolo UCI. Quando a página está isolada entre origens (`crossOriginIsolated`), é usada a versão multithread, com até 8 threads; caso contrário, o app volta automaticamente para a versão single-thread.
 - **Persistência:** sessão local no `localStorage`; histórico, revisões e progresso de treino no `IndexedDB` do navegador.
-- **Captura e visão:** APIs de câmera/compartilhamento de tela do navegador e comparação de alterações visuais nas casas do tabuleiro. O pacote `onnxruntime-web` está presente nas dependências, mas isso **não significa que o reconhecimento por câmera esteja pronto**.
+- **Captura e visão:** APIs de câmera/compartilhamento de tela do navegador e comparação de alterações visuais nas casas do tabuleiro. O reconhecimento automático de peças pela câmera **ainda não está implementado**.
 
-A análise do motor é local. Não é necessário cadastrar uma chave de API para as funções descritas acima. A performance depende do navegador e do equipamento; a captura de tela requer permissão explícita e pode variar conforme o conteúdo compartilhado.
+Para habilitar o motor multithread em produção, o servidor precisa enviar os headers `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Embedder-Policy: credentialless` (já configurados em `vite.config.ts` para `npm run dev` e `npm run preview`).
+
+A análise do motor é local. A única comunicação externa é a importação de partidas online, feita só quando o usuário busca um nome de usuário na API pública do Lichess ou do Chess.com. Não é necessário cadastrar uma chave de API para as funções descritas acima. A performance depende do navegador e do equipamento; a captura de tela requer permissão explícita e pode variar conforme o conteúdo compartilhado.
 
 ## Pré-requisitos
 
@@ -209,8 +210,8 @@ O script instala as dependências quando necessário, prepara o Stockfish, abre 
 
 1. Abra a área principal e escolha **Coach** (brancas ou pretas) ou **Análise livre**.
 2. Movimente as peças dos dois lados para reproduzir a partida. Ajuste profundidade e quantidade de variantes conforme a capacidade do dispositivo.
-3. Importe um PGN ou carregue uma FEN para estudar outra posição; ao terminar, use a revisão pós-partida para examinar os lances.
-4. Acesse **Professor de Aberturas** para estudar linhas explicadas ou praticá-las; use **Centro de Treino** para trabalhar tática, finais e erros identificados nas revisões.
+3. Importe um PGN ou carregue uma FEN para estudar outra posição. Em **PGN / FEN**, você também pode buscar suas partidas recentes no Lichess ou no Chess.com pelo nome de usuário; no modo Coach, o tabuleiro assume a cor que você jogou. Ao terminar, use a revisão pós-partida para examinar os lances.
+4. Acesse **Professor de Aberturas** para estudar linhas explicadas ou praticá-las. Em **Importar meu repertório (PGN)**, cole suas próprias linhas: os comentários entre chaves viram as explicações. Use **Centro de Treino** para trabalhar tática, finais e erros identificados nas revisões.
 5. Na **Análise da tela ao vivo**, conceda a permissão de compartilhamento, marque os quatro cantos do tabuleiro na ordem indicada, defina a orientação e acompanhe o status do rastreamento. Confirme manualmente lances que não possam ser determinados com segurança.
 6. No **Tabuleiro por câmera**, conceda acesso e calibre a grade. Essa área ainda não converte a imagem em uma posição de xadrez automaticamente.
 
@@ -218,31 +219,44 @@ O script instala as dependências quando necessário, prepara o Stockfish, abre 
 
 ## Comandos úteis
 
-| Comando | Finalidade |
-| --- | --- |
-| `npm run dev` | Prepara o Stockfish e inicia o servidor de desenvolvimento. |
-| `npm test` | Executa os testes de regras de xadrez e dados de treino. |
-| `npm run build` | Prepara o motor, verifica TypeScript e gera `dist/`. |
-| `npm run preview` | Pré-visualiza localmente o build gerado. |
-| `npm run check` | Executa testes e build em sequência. |
-| `npm run prepare:engine` | Copia/prepara os arquivos do Stockfish utilizados pela interface. |
+| Comando                      | Finalidade                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| `npm run dev`                | Prepara o Stockfish e inicia o servidor de desenvolvimento.                      |
+| `npm test`                   | Executa os testes de regras de xadrez e dados de treino.                         |
+| `npm run build`              | Prepara o motor, verifica TypeScript e gera `dist/`.                             |
+| `npm run preview`            | Pré-visualiza localmente o build gerado.                                         |
+| `npm run lint`               | Verifica o código com ESLint (TypeScript e regras de hooks do React).            |
+| `npm run format`             | Formata o projeto com Prettier (`npm run format:check` apenas verifica).         |
+| `npm run check`              | Executa lint, verificação de formatação, testes e build em sequência.            |
+| `npm run prepare:engine`     | Copia/prepara os arquivos do Stockfish utilizados pela interface.                |
+| `node scripts/build-eco.mjs` | Regenera `public/eco/openings.json` a partir do dataset de aberturas do Lichess. |
 
 ## Organização do código
 
 ```text
 src/
-  App.tsx                # Tabuleiro principal, Coach, análise e revisão
+  App.tsx                # Navegação entre áreas, tema e composição da tela
+  play/                  # Área "Jogar & Analisar": tela inicial, tabuleiro, painel, revisão e diálogos
+    panel/               # Cards do painel lateral, incluindo a visualização "Stockfish ao vivo"
+    engine-visualizer/   # Desenho em canvas da árvore de busca e do esquema da NNUE
   OpeningTrainer.tsx     # Aberturas e treino ativo
   TrainingHub.tsx        # Exercícios e progresso
   ScreenAnalysis.tsx     # Compartilhamento e rastreamento da tela
   CameraAnalysis.tsx     # Captura/calibração por câmera (experimental)
   engine.ts              # Integração com Stockfish
-  hooks/                 # Estado do jogo, motor e captura
+  eco.ts                 # Base ECO: nome da abertura e continuações catalogadas
+  repertoire.ts          # Repertório pessoal importado de PGN
+  online-games.ts        # Busca de partidas no Lichess/Chess.com
+  components/            # Tabuleiro e importação de partidas online
+  hooks/                 # Sessão de jogo (usePlaySession), motor, aparência, tema e captura
+  board-geometry.ts      # Casas, orientação e coordenadas do tabuleiro
+  game-helpers.ts        # Resultado, navegação no histórico e precisão da revisão
   vision/                # Geometria e acompanhamento visual do tabuleiro
   persistence.ts         # Dados locais de partidas/revisões/treino
   training-data.ts       # Posições de treino
 scripts/                 # Preparação do motor e testes
 public/pieces/           # Conjuntos de peças
+public/eco/              # Base ECO gerada (CC0)
 openspec/                # Especificações e propostas de mudanças
 ```
 
@@ -252,7 +266,7 @@ openspec/                # Especificações e propostas de mudanças
 npm run check
 ```
 
-Os testes automatizados cobrem regras críticas de xadrez e dados de treino. O comando acima também verifica o build, mas **não substitui testes manuais de interface, permissões de captura e comportamento do motor em diferentes navegadores**.
+Os testes automatizados cobrem regras críticas de xadrez e dados de treino. O comando acima também roda o lint, confere a formatação e verifica o build, mas **não substitui testes manuais de interface, permissões de captura e comportamento do motor em diferentes navegadores**.
 
 Se a análise não iniciar, consulte o console do navegador e, ao usar `start.sh`, o arquivo `.xadrez-dev.log`. Confira se os arquivos do motor foram preparados com `npm run prepare:engine`. Para problemas de captura, verifique permissões, origem segura (`localhost`/HTTPS) e a calibração do tabuleiro.
 
@@ -261,6 +275,7 @@ Se a análise não iniciar, consulte o console do navegador e, ao usar `start.sh
 O **código e a documentação autorais** deste projeto são disponibilizados sob a [licença MIT](LICENSE): é permitido usar, estudar, modificar e redistribuir esse material, inclusive comercialmente, preservando o aviso de direitos autorais e a licença. A licença MIT **não altera** os direitos sobre arquivos de terceiros presentes no repositório ou instalados como dependências.
 
 - **Stockfish / Stockfish.js:** motor distribuído sob GPL-3.0. Ao redistribuir um produto que inclua o motor, é necessário avaliar e cumprir as exigências da GPL, incluindo a disponibilização do código-fonte correspondente e a licença aplicável ao conjunto distribuído. A licença MIT do código autoral não dispensa essas obrigações.
+- **Base de aberturas ECO:** gerada a partir de [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings), sob CC0-1.0; veja [`public/eco/ATTRIBUTION.md`](public/eco/ATTRIBUTION.md).
 - **Conjuntos de peças:** artes com licenças próprias, incluindo condições de atribuição e compartilhamento pela mesma licença em alguns conjuntos; consulte [`public/pieces/ATTRIBUTION.md`](public/pieces/ATTRIBUTION.md) e a origem de cada asset antes de redistribuí-lo.
 - **Outras dependências e modelos/datasets:** permanecem sujeitos às licenças dos respectivos titulares; confira suas condições antes de redistribuir binários ou materiais derivados.
 

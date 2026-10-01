@@ -7,7 +7,10 @@ export function useCornerCalibration() {
   const [corners, setCorners] = useState<Point[]>([])
   const addCorner = useCallback((event: MouseEvent<HTMLElement>) => {
     const box = event.currentTarget.getBoundingClientRect()
-    const point = { x: ((event.clientX - box.left) / box.width) * 100, y: ((event.clientY - box.top) / box.height) * 100 }
+    const point = {
+      x: ((event.clientX - box.left) / box.width) * 100,
+      y: ((event.clientY - box.top) / box.height) * 100,
+    }
     setCorners((current) => (current.length === 4 ? [point] : [...current, point]))
   }, [])
   const reset = useCallback(() => setCorners([]), [])

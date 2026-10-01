@@ -5,7 +5,9 @@ export type ScreenCaptureState = 'idle' | 'active' | 'unsupported' | 'insecure' 
 /** Captures a shared screen/window/tab as a MediaStream, for reading a live chess broadcast off-screen. */
 export function useScreenCapture() {
   const streamRef = useRef<MediaStream | null>(null)
-  const [state, setState] = useState<ScreenCaptureState>(() => !navigator.mediaDevices?.getDisplayMedia ? 'unsupported' : !window.isSecureContext ? 'insecure' : 'idle')
+  const [state, setState] = useState<ScreenCaptureState>(() =>
+    !navigator.mediaDevices?.getDisplayMedia ? 'unsupported' : !window.isSecureContext ? 'insecure' : 'idle',
+  )
   const [stream, setStream] = useState<MediaStream | null>(null)
 
   const stop = useCallback(() => {
@@ -16,8 +18,14 @@ export function useScreenCapture() {
   }, [])
 
   const start = useCallback(async () => {
-    if (!navigator.mediaDevices?.getDisplayMedia) { setState('unsupported'); return }
-    if (!window.isSecureContext) { setState('insecure'); return }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setState('unsupported')
+      return
+    }
+    if (!window.isSecureContext) {
+      setState('insecure')
+      return
+    }
     stop()
     try {
       const next = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false })

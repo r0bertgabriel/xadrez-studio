@@ -76,11 +76,11 @@ export default function PlayScreen({ session, appearance, profile }: Props) {
       <section className={`game-layout ${panelCollapsed ? 'panel-collapsed' : ''}`}>
         <BoardColumn session={session} appearance={appearance} />
         <aside className="coach-panel">
+          <EngineVisualizer engine={session.engine} perspective={session.perspective} />
           <EvaluationCard session={session} />
           <OpeningCard session={session} />
           <TacticalCards session={session} />
           <RecommendationCard session={session} />
-          <EngineVisualizer engine={session.engine} perspective={session.perspective} />
           <CandidateLinesCard session={session} />
           <TelemetryCard session={session} />
           <AppearanceCard appearance={appearance} />

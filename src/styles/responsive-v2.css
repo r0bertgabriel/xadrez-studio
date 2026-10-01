@@ -43,6 +43,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
   }
+  .coach-panel > .engine-visualizer,
   .coach-panel > .eval-card,
   .coach-panel > .recommendation-card,
   .coach-panel > .moves-card {

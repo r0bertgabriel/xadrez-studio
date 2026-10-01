@@ -83,7 +83,8 @@ export function reviewLoss(before: ReviewEvaluation, after: ReviewEvaluation) {
   return Math.max(0, Math.round((before.cp ?? 0) - (after.cp ?? 0)))
 }
 
-function expectedScore(evaluation: ReviewEvaluation) {
+/** Expected score (0–1) for the side the evaluation belongs to, on the same logistic curve used to grade moves. */
+export function expectedScore(evaluation: ReviewEvaluation) {
   if (evaluation.mate !== null) return evaluation.mate > 0 ? 1 : 0
   const cp = Math.max(-1200, Math.min(1200, evaluation.cp ?? 0))
   return 1 / (1 + Math.exp(-cp / 260))

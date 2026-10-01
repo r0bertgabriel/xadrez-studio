@@ -47,7 +47,20 @@ export function threatsFor(game: Chess): TacticalInsights {
   return { opportunities: unique(opportunities).slice(0, 8), threats: unique(threats).slice(0, 8) }
 }
 
-export function boardSvg(game: Chess, pieceSet: string, theme: { light: string; dark: string }) {
+async function pieceDataUri(pieceSet: string, code: string) {
+  const response = await fetch(`/pieces/${pieceSet}/${code}.svg`)
+  if (!response.ok) throw new Error(`Peça ${code} indisponível no conjunto ${pieceSet}.`)
+  const markup = await response.text()
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+}
+
+/**
+ * Pieces are embedded as data URIs: an SVG rendered through <img>/canvas (PNG export) never loads
+ * external resources, and a downloaded SVG pointing at this origin breaks once opened elsewhere.
+ */
+export async function boardSvg(game: Chess, pieceSet: string, theme: { light: string; dark: string }) {
+  const codes = new Set(game.board().flat().flatMap((piece) => piece ? [`${piece.color}${piece.type.toUpperCase()}`] : []))
+  const artworkByCode = new Map(await Promise.all([...codes].map(async (code) => [code, await pieceDataUri(pieceSet, code)] as const)))
   const size = 800
   const cell = size / 8
   const ranks = ['8','7','6','5','4','3','2','1']
@@ -57,7 +70,7 @@ export function boardSvg(game: Chess, pieceSet: string, theme: { light: string; 
     const piece = game.get(square)
     const fill = (col + row) % 2 === 0 ? theme.light : theme.dark
     const x = col * cell; const y = row * cell
-    const artwork = piece ? `<image href="${location.origin}/pieces/${pieceSet}/${piece.color}${piece.type.toUpperCase()}.svg" x="${x + 4}" y="${y + 4}" width="${cell - 8}" height="${cell - 8}"/>` : ''
+    const artwork = piece ? `<image href="${artworkByCode.get(`${piece.color}${piece.type.toUpperCase()}`)}" x="${x + 4}" y="${y + 4}" width="${cell - 8}" height="${cell - 8}"/>` : ''
     const labels = `${col === 0 ? `<text x="${x + 7}" y="${y + 16}" font-size="14" font-family="monospace" fill="#111">${rank}</text>` : ''}${row === 7 ? `<text x="${x + cell - 16}" y="${y + cell - 7}" font-size="14" font-family="monospace" fill="#111">${file}</text>` : ''}`
     return `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${fill}"/>${artwork}${labels}`
   })).join('')

@@ -188,7 +188,8 @@ function downloadText(name: string, content: string, type: string) {
   anchor.href = url
   anchor.download = name
   anchor.click()
-  URL.revokeObjectURL(url)
+  // Revoking synchronously can cancel the download in some browsers (notably Firefox).
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 function pieceAsset(set: PieceSet, color: Color, piece: PieceSymbol) {
   return `/pieces/${set}/${color}${PIECE_NAMES[piece]}.svg`
@@ -205,7 +206,7 @@ function downloadBoardPng(svg: string) {
       if (!blob) return
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'posicao.png'; anchor.click()
-      URL.revokeObjectURL(url)
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
     }, 'image/png')
     URL.revokeObjectURL(source)
   }
@@ -439,6 +440,11 @@ export default function App() {
     executeMove(selected, square)
   }
 
+  // Selecting the latest move must return to the live position; a viewPly equal to the history
+  // length would show the same board but keep it locked as if it were a past position.
+  function viewMove(ply: number) {
+    setViewPly(ply >= history.length ? null : ply)
+  }
   function clearAnnotations() {
     setManualArrows([]); setManualCircles([]); setManualArrowStart(null); setMarkTool('move')
   }
@@ -576,8 +582,25 @@ export default function App() {
   const activeTurnLabel = liveGame.turn() === 'w' ? 'Brancas' : 'Pretas'
   const moveNumber = Math.floor(history.length / 2) + 1
 
+  async function exportBoard(format: 'svg' | 'png') {
+    try {
+      const svg = await boardSvg(liveGame, pieceSet, EXPORT_THEME_COLORS[boardTheme])
+      if (format === 'svg') downloadText('posicao.svg', svg, 'image/svg+xml')
+      else downloadBoardPng(svg)
+    } catch (error) {
+      console.error('Falha ao exportar a posição.', error)
+    }
+  }
+
+  function openPlayArea() {
+    if (activeArea === 'play') return
+    setActiveArea('play')
+    // Leaving the tab cancels any in-flight search; restart it so the coach panel is not stuck on "Calculando…".
+    if (playerSide && !analysis && !reviewing && !liveGame.isGameOver()) void analyzePosition(gameRef.current, playerSide, sessionRef.current)
+  }
+
   const globalTabs = <nav className="global-tabs" aria-label="Navegação principal">
-    <button className={activeArea === 'play' ? 'active' : ''} onClick={() => setActiveArea('play')}>Jogar &amp; Analisar</button>
+    <button className={activeArea === 'play' ? 'active' : ''} onClick={openPlayArea}>Jogar &amp; Analisar</button>
     <button className={activeArea === 'openings' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('openings') }}>Professor de Aberturas</button>
     <button className={activeArea === 'training' ? 'active' : ''} onClick={() => { cancelAnalysis(); setActiveArea('training') }}>Centro de Treino</button>
     <button className="under-development" disabled title="Em desenvolvimento">Visão por câmera <span>Em desenvolvimento</span></button>
@@ -666,15 +689,15 @@ export default function App() {
       <section className="card engine-metrics"><div className="card-title"><strong>Telemetria</strong><span>linha principal</span></div>{analysis?.lines[0] ? <div><span><b>Prof.</b> {analysis.lines[0].depth}{analysis.lines[0].selDepth ? `/${analysis.lines[0].selDepth}` : ''}</span><span><b>Nós</b> {analysis.lines[0].nodes?.toLocaleString('pt-BR') ?? '—'}</span><span><b>NPS</b> {analysis.lines[0].nps?.toLocaleString('pt-BR') ?? '—'}</span><span><b>Tempo</b> {analysis.lines[0].timeMs ? `${analysis.lines[0].timeMs} ms` : '—'}</span></div> : <p className="empty-state">Aguardando análise.</p>}</section>
       <section className="card appearance-card"><div className="card-title"><strong>Aparência</strong><span>salvo localmente</span></div><label className="appearance-select"><span>Conjunto de peças · {PIECE_SET_OPTIONS.length} estilos</span><select value={pieceSet} onChange={(event) => setPieceSet(event.target.value as PieceSet)}>{PIECE_SET_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Tabuleiro · {BOARD_THEME_OPTIONS.length} temas</span><select value={boardTheme} onChange={(event) => setBoardTheme(event.target.value as BoardTheme)}>{BOARD_THEME_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><label className="appearance-select"><span>Seta de dica · {HINT_STYLE_OPTIONS.length} estilos</span><select value={hintStyle} onChange={(event) => setHintStyle(event.target.value as HintStyle)}>{HINT_STYLE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label} — {option.description}</option>)}</select></label><div className="favorite-appearance"><div><strong>{favoriteAppearance ? 'Favorito salvo' : 'Sem favorito salvo'}</strong><small>{favoriteAppearance ? `${PIECE_SET_OPTIONS.find((option) => option.id === favoriteAppearance.pieceSet)?.label} · ${BOARD_THEME_OPTIONS.find((option) => option.id === favoriteAppearance.boardTheme)?.label} · ${HINT_STYLE_OPTIONS.find((option) => option.id === favoriteAppearance.hintStyle)?.label}` : 'Salve sua combinação atual para recuperá-la em um clique.'}</small></div><button onClick={() => setFavoriteAppearance({ pieceSet, boardTheme, hintStyle })}>Salvar favorito</button>{favoriteAppearance && <button className="apply-favorite" onClick={() => { setPieceSet(favoriteAppearance.pieceSet); setBoardTheme(favoriteAppearance.boardTheme); setHintStyle(favoriteAppearance.hintStyle) }}>Aplicar favorito</button>}</div></section>
       <section className="card engine-settings"><div className="card-title"><strong>Força da análise</strong><span>local</span></div><label>Profundidade <b>{depth}</b><input type="range" min="10" max="20" value={depth} onChange={(e) => setDepth(Number(e.target.value))} /></label><label>Variantes <b>{multiPv}</b><input type="range" min="1" max="5" value={multiPv} onChange={(e) => setMultiPv(Number(e.target.value))} /></label><button onClick={() => analyzePosition(liveGame, playerSide, sessionRef.current)} disabled={thinking || liveGame.isGameOver()}>Recalcular</button></section>
-      <section className="card moves-card"><div className="card-title"><strong>Partida</strong><span>{history.length} meios-lances</span></div><div className="move-list">{Array.from({ length: Math.ceil(history.length / 2) }, (_, index) => <div key={index}><b>{index + 1}.</b><button className={viewPly === index * 2 + 1 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 1 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 1)}>{history[index * 2] ?? ''}</button><button className={viewPly === index * 2 + 2 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 2 ? 'step' : undefined} onClick={() => setViewPly(index * 2 + 2)}>{history[index * 2 + 1] ?? ''}</button></div>)}{!history.length && <div className="empty-state">Nenhum lance registrado.</div>}</div><div className="move-actions"><button className="review-button" onClick={reviewGame} disabled={!history.length || reviewing}>Analisar lances</button><button onClick={() => downloadText('partida.pgn', liveGame.pgn(), 'application/x-chess-pgn')}>Exportar PGN</button></div></section>
-      <section className="card export-card"><div className="card-title"><strong>Exportar posição</strong><span>tema atual</span></div><div className="move-actions"><button onClick={() => downloadText('posicao.svg', boardSvg(liveGame, pieceSet, EXPORT_THEME_COLORS[boardTheme]), 'image/svg+xml')}>SVG</button><button onClick={() => downloadBoardPng(boardSvg(liveGame, pieceSet, EXPORT_THEME_COLORS[boardTheme]))}>PNG</button></div></section>
+      <section className="card moves-card"><div className="card-title"><strong>Partida</strong><span>{history.length} meios-lances</span></div><div className="move-list">{Array.from({ length: Math.ceil(history.length / 2) }, (_, index) => <div key={index}><b>{index + 1}.</b><button className={viewPly === index * 2 + 1 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 1 ? 'step' : undefined} onClick={() => viewMove(index * 2 + 1)}>{history[index * 2] ?? ''}</button><button className={viewPly === index * 2 + 2 ? 'active-move' : ''} aria-current={viewPly === index * 2 + 2 ? 'step' : undefined} onClick={() => viewMove(index * 2 + 2)}>{history[index * 2 + 1] ?? ''}</button></div>)}{!history.length && <div className="empty-state">Nenhum lance registrado.</div>}</div><div className="move-actions"><button className="review-button" onClick={reviewGame} disabled={!history.length || reviewing}>Analisar lances</button><button onClick={() => downloadText('partida.pgn', liveGame.pgn(), 'application/x-chess-pgn')}>Exportar PGN</button></div></section>
+      <section className="card export-card"><div className="card-title"><strong>Exportar posição</strong><span>tema atual</span></div><div className="move-actions"><button onClick={() => void exportBoard('svg')}>SVG</button><button onClick={() => void exportBoard('png')}>PNG</button></div></section>
       <section className="card profile-card"><div className="card-title"><strong>Seu desempenho</strong><span>{storedGames} partida(s) no IndexedDB</span></div>{profile.games ? <div><strong>{Math.round(profile.totalAccuracy / profile.games)}%</strong><span>média geral</span><small>Brancas: {profile.white.games ? `${Math.round(profile.white.accuracy / profile.white.games)}%` : '—'} · Pretas: {profile.black.games ? `${Math.round(profile.black.accuracy / profile.black.games)}%` : '—'} · {profile.games} revisão(ões)</small></div> : <p className="empty-state">Analise uma partida para começar seu histórico local.</p>}</section>
     </aside></section>
 
     {review.length > 0 && <section className="review-section"><div className="review-header"><div><span className="eyebrow">PÓS-PARTIDA</span><h2>Revisão interativa</h2></div><div className="accuracy"><span>Precisão estimada</span><strong>{accuracy}%</strong></div></div>
       <div className="quality-summary">{Object.entries(qualityCounts).map(([label, count]) => <span key={label}><b>{count}</b> {label}</span>)}</div>
-      <div className="eval-chart"><svg viewBox="0 0 600 120" preserveAspectRatio="none"><line x1="0" y1="60" x2="600" y2="60" /><polyline points={review.map((row, index) => `${review.length === 1 ? 300 : index * (600 / (review.length - 1))},${Math.max(5, Math.min(115, 60 - row.eval / 25))}`).join(' ')} />{review.map((row, index) => { const x = review.length === 1 ? 300 : index * (600 / (review.length - 1)); const y = Math.max(5, Math.min(115, 60 - row.eval / 25)); return <circle key={row.ply} className={selectedReviewPly === row.ply ? 'selected-point' : ''} cx={x} cy={y} r="4" onClick={() => { setSelectedReviewPly(row.ply); setViewPly(row.ply) }}><title>{`${row.san}: ${displayEval(row.eval)}`}</title></circle> })}</svg><small>Clique em um ponto para abrir o lance.</small></div>
-      <div className="review-grid">{review.map((row) => <button className={`review-row ${selectedReviewPly === row.ply ? 'selected-review' : ''}`} key={row.ply} onClick={() => { setSelectedReviewPly(row.ply); setViewPly(row.ply) }}><div className="move-number">{Math.ceil(row.ply / 2)}{row.ply % 2 === 0 ? '…' : '.'}</div><div><strong>{row.san}</strong><small>{row.actual}</small></div><span className={`quality q-${row.label.toLowerCase().replaceAll(' ', '-')}`}>{row.label}</span><div><small>melhor</small><code>{row.bestSan}</code></div><div><small>perda</small><strong>{row.loss} cp</strong></div><div><small>avaliação</small><strong>{displayEval(row.eval)}</strong></div></button>)}</div>
+      <div className="eval-chart"><svg viewBox="0 0 600 120" preserveAspectRatio="none"><line x1="0" y1="60" x2="600" y2="60" /><polyline points={review.map((row, index) => `${review.length === 1 ? 300 : index * (600 / (review.length - 1))},${Math.max(5, Math.min(115, 60 - row.eval / 25))}`).join(' ')} />{review.map((row, index) => { const x = review.length === 1 ? 300 : index * (600 / (review.length - 1)); const y = Math.max(5, Math.min(115, 60 - row.eval / 25)); return <circle key={row.ply} className={selectedReviewPly === row.ply ? 'selected-point' : ''} cx={x} cy={y} r="4" onClick={() => { setSelectedReviewPly(row.ply); viewMove(row.ply) }}><title>{`${row.san}: ${displayEval(row.eval)}`}</title></circle> })}</svg><small>Clique em um ponto para abrir o lance.</small></div>
+      <div className="review-grid">{review.map((row) => <button className={`review-row ${selectedReviewPly === row.ply ? 'selected-review' : ''}`} key={row.ply} onClick={() => { setSelectedReviewPly(row.ply); viewMove(row.ply) }}><div className="move-number">{Math.ceil(row.ply / 2)}{row.ply % 2 === 0 ? '…' : '.'}</div><div><strong>{row.san}</strong><small>{row.actual}</small></div><span className={`quality q-${row.label.toLowerCase().replaceAll(' ', '-')}`}>{row.label}</span><div><small>melhor</small><code>{row.bestSan}</code></div><div><small>perda</small><strong>{row.loss} cp</strong></div><div><small>avaliação</small><strong>{displayEval(row.eval)}</strong></div></button>)}</div>
       {selectedReview && <div className="review-detail"><div><span>Seu lance</span><strong>{selectedReview.san}</strong><code>{selectedReview.actual}</code></div><div className="versus">×</div><div><span>Melhor lance</span><strong>{selectedReview.bestSan}</strong><code>{selectedReview.best}</code></div><p>{selectedReview.ideas.join(' · ')}</p></div>}
       {puzzles.length > 0 && <div className="puzzle-lab"><div><span className="eyebrow">TREINO DOS SEUS ERROS</span><h3>{puzzles.length} posição(ões) para praticar</h3></div><button onClick={() => { setPuzzleIndex(0); setViewPly(null) }}>Treinar erros</button>{activePuzzle && <div className="puzzle-card"><strong>Encontre a melhor jogada da posição antes de {activePuzzle.san}</strong><code>{activePuzzle.fenBefore}</code><button onClick={() => openPuzzlePosition(activePuzzle.fenBefore)}>Abrir posição na ferramenta FEN</button><details><summary>Ver solução</summary><b>{activePuzzle.bestSan}</b> · {activePuzzle.ideas.join(', ')}</details><div className="puzzle-nav"><button onClick={() => setPuzzleIndex((value) => Math.max(0, (value ?? 0) - 1))}>Anterior</button><span>{(puzzleIndex ?? 0) + 1}/{puzzles.length}</span><button onClick={() => setPuzzleIndex((value) => Math.min(puzzles.length - 1, (value ?? 0) + 1))}>Próximo</button></div></div>}</div>}
     </section>}

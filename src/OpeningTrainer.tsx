@@ -38,7 +38,12 @@ export default function OpeningTrainer({ engine, pieceSet }: { engine: Stockfish
   const [rejected, setRejected] = useState<{ from: Square; to: Square } | null>(null)
   const sessionTokenRef = useRef(0)
   const mountedRef = useRef(true)
-  useEffect(() => () => { mountedRef.current = false }, [])
+  // Re-arm on every mount: StrictMode runs mount → cleanup → mount, and a cleanup-only effect
+  // would leave the flag stuck at false, silently freezing the quiz and the engine feedback.
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const course = OPENING_COURSES.find((item) => item.id === selectedId) ?? OPENING_COURSES[0]
   const filteredCourses = useMemo(() => {

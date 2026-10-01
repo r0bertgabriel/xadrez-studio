@@ -139,12 +139,14 @@ function TrainingBoard({
     if (!candidate) { setSelected(null); return }
     const uci = `${candidate.from}${candidate.to}${candidate.promotion ?? ''}`
     const normalized = position.solution.length === 5 && uci.length === 4 ? `${uci}${position.solution[4]}` : uci
-    const success = normalized === position.solution
+    const promotion = (normalized[4] || undefined) as PieceSymbol | undefined
+    const next = new Chess(position.fen)
+    next.move({ from: candidate.from, to: candidate.to, promotion })
+    // A position can have several mating moves; any of them is as good as the catalogued one.
+    const success = normalized === position.solution || next.isCheckmate()
     const alreadyGraded = gradedRef.current
     grade(success)
     if (success) {
-      const next = new Chess(position.fen)
-      next.move({ from: candidate.from, to: candidate.to, promotion: (position.solution[4] || candidate.promotion || 'q') as PieceSymbol })
       setGame(next)
       setFeedback(alreadyGraded ? `Correto — você encontrou a solução. O erro inicial já foi contabilizado. ${position.explanation}` : `Correto. ${position.explanation}`)
       setSolved(true)

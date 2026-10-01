@@ -17,6 +17,8 @@ for (const [, fen, side, uci] of positions) {
   signatures.add(signature)
   const game = new Chess(fen)
   assert.equal(game.turn(), side, `side-to-move mismatch for ${fen}`)
+  const opponentView = new Chess(fen.replace(` ${side} `, ` ${side === 'w' ? 'b' : 'w'} `))
+  assert.equal(opponentView.inCheck(), false, `illegal training position (side not to move is in check) ${fen}`)
   const from = uci.slice(0, 2)
   const to = uci.slice(2, 4)
   const promotion = uci[4]

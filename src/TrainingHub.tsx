@@ -41,7 +41,8 @@ function errorPuzzles(reviews: StoredReview<ReviewRow>[]): ErrorPuzzle[] {
       if (unique.has(id)) continue
       unique.set(id, {
         id,
-        title: `${row.label} no lance ${Math.ceil(row.ply / 2)}`,
+        // The FEN carries the real move number, even for games loaded mid-way.
+        title: `${row.label} no lance ${Number(row.fenBefore.split(' ')[5]) || Math.ceil(row.ply / 2)}`,
         category: 'Seus erros',
         theme: row.ideas[0] ?? 'melhor lance',
         fen: row.fenBefore,

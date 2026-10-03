@@ -412,6 +412,8 @@ export class StockfishEngine {
     const pending = this.pending
     this.pending = null
     window.clearTimeout(pending.timeoutId)
+    // Live views would otherwise keep animating a search nobody is waiting for.
+    this.emitProgress(pending, true)
     pending.reject(error)
   }
 

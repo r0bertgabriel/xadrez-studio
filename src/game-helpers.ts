@@ -71,6 +71,16 @@ export function gameAtPly(source: Chess, ply: number) {
   return copy
 }
 
+/**
+ * Full-move number and mover of half-move `ply` (1-based). Games loaded from a FEN may start on
+ * a later move or with Black to play, so this cannot be derived from the ply alone.
+ */
+export function moveLabelFor(startFen: string, ply: number): { number: number; color: Color } {
+  const [, turn, , , , fullMove] = startFen.split(' ')
+  const index = ply - 1 + (turn === 'b' ? 1 : 0)
+  return { number: (Number(fullMove) || 1) + Math.floor(index / 2), color: index % 2 === 0 ? 'w' : 'b' }
+}
+
 export function nextViewPly(value: number | null, historyLength: number): number | null {
   const next = (value ?? historyLength) + 1
   return next >= historyLength ? null : next

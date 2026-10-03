@@ -31,7 +31,7 @@ export default function BoardColumn({ session, appearance }: { session: PlaySess
   } = session
   const live = viewPly === null
   const activeTurnLabel = sideLabel(liveGame.turn())
-  const moveNumber = Math.floor(history.length / 2) + 1
+  const moveNumber = liveGame.moveNumber()
 
   function classForSquare(square: Square) {
     const check = checkedKing === square ? (displayedGame.isCheckmate() ? 'checkmated' : 'checked') : ''
@@ -79,7 +79,7 @@ export default function BoardColumn({ session, appearance }: { session: PlaySess
         )}
       </div>
       <p className="sr-only" aria-live="polite">
-        {history.length ? `${history.length % 2 ? 'Brancas' : 'Pretas'} jogaram ${history.at(-1)}.` : ''}
+        {history.length ? `${liveGame.turn() === 'w' ? 'Pretas' : 'Brancas'} jogaram ${history.at(-1)}.` : ''}
       </p>
       <div className="player-row my-row">
         <div>

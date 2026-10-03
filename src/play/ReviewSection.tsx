@@ -1,5 +1,5 @@
 import { displayEval } from '../chess-analysis'
-import type { ReviewMove } from '../game-helpers'
+import { moveLabelFor, type ReviewMove } from '../game-helpers'
 import type { PlaySession } from '../hooks/usePlaySession'
 
 const CHART_WIDTH = 600
@@ -115,8 +115,8 @@ export default function ReviewSection({ session }: { session: PlaySession }) {
             onClick={() => selectReviewRow(row.ply)}
           >
             <div className="move-number">
-              {Math.ceil(row.ply / 2)}
-              {row.ply % 2 === 0 ? '…' : '.'}
+              {moveLabelFor(session.startFen, row.ply).number}
+              {moveLabelFor(session.startFen, row.ply).color === 'b' ? '…' : '.'}
             </div>
             <div>
               <strong>{row.san}</strong>

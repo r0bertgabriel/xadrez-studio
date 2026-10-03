@@ -188,6 +188,14 @@ O `start.sh` instala dependências caso necessário, prepara o motor, inicia o V
 PORT=5174 ./start.sh
 ```
 
+Para abrir de outro aparelho na rede local (ex.: o celular como câmera), use HTTPS. Pelo IP em `http://`, o navegador bloqueia câmera, captura de tela e o Stockfish multithread. O certificado é autoassinado, então aceite o aviso do navegador:
+
+```bash
+HTTPS=1 ./start.sh
+```
+
+Em produção, o host precisa enviar os cabeçalhos `Cross-Origin-Opener-Policy: same-origin` e `Cross-Origin-Embedder-Policy: credentialless` para liberar o motor multithread. O projeto já traz `public/_headers` (Netlify e Cloudflare Pages) e `vercel.json`. Sem esses cabeçalhos, e no Safari, o app usa o build de uma thread.
+
 Para acompanhar o log:
 
 ```bash

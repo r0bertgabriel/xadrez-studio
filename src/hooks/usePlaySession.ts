@@ -56,6 +56,8 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
   const { engine, engineRef, cancelAnalysis } = useStockfish()
   const requestRef = useRef(0)
   const sessionRef = useRef(0)
+  // True while another area of the app is on screen: the play area must not start new searches.
+  const suspendedRef = useRef(false)
 
   const [playerSide, setPlayerSide] = useState<Color | null>(null)
   const [mode, setMode] = useState<Mode>('coach')
@@ -87,6 +89,7 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
 
   const liveGame = useMemo(() => cloneGame(game), [game])
   const history = useMemo(() => liveGame.history(), [liveGame])
+  const startFen = useMemo(() => gameAtPly(liveGame, 0).fen(), [liveGame])
   const displayedGame = useMemo(() => (viewPly === null ? liveGame : gameAtPly(liveGame, viewPly)), [liveGame, viewPly])
   const orientation: Color = playerSide ?? 'w'
   const checkedKing = findCheckedKing(displayedGame)
@@ -599,7 +602,7 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
       setReviewing(false)
       setReviewProgress(null)
       // A session left during the review (setup screen, another game) must not get a new search.
-      if (sessionRef.current === session && !gameRef.current.isGameOver())
+      if (sessionRef.current === session && !suspendedRef.current && !gameRef.current.isGameOver())
         void analyzePosition(gameRef.current, side, session)
     }
   }
@@ -610,7 +613,14 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
   }
 
   /** Re-runs the search when returning to the play area, since leaving it cancels analysis. */
+  /** Leaving the play area stops its search, except a running review, which would be lost. */
+  function suspendAnalysis() {
+    suspendedRef.current = true
+    if (!reviewing) cancelAnalysis()
+  }
+
   function resumeAnalysis() {
+    suspendedRef.current = false
     if (playerSide && !analysis && !reviewing && !liveGame.isGameOver())
       void analyzePosition(gameRef.current, playerSide, sessionRef.current)
   }
@@ -627,6 +637,7 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     liveGame,
     displayedGame,
     history,
+    startFen,
     playerSide,
     mode,
     orientation,
@@ -710,6 +721,7 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     restoreSession,
     reviewGame,
     resumeAnalysis,
+    suspendAnalysis,
     recalculate,
   }
 }

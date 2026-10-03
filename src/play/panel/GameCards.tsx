@@ -5,7 +5,10 @@ import type { PerformanceProfile } from '../../hooks/usePerformanceProfile'
 import type { PlaySession } from '../../hooks/usePlaySession'
 
 export function MovesCard({ session }: { session: PlaySession }) {
-  const { history, viewPly, viewMove, reviewing, liveGame } = session
+  const { history, viewPly, viewMove, reviewing, liveGame, startFen } = session
+  // A game loaded with Black to move starts its first row with an empty White slot.
+  const offset = startFen.split(' ')[1] === 'b' ? 1 : 0
+  const firstMoveNumber = Number(startFen.split(' ')[5]) || 1
 
   function moveButton(ply: number) {
     const san = history[ply - 1]
@@ -28,11 +31,11 @@ export function MovesCard({ session }: { session: PlaySession }) {
         <span>{history.length} meios-lances</span>
       </div>
       <div className="move-list">
-        {Array.from({ length: Math.ceil(history.length / 2) }, (_, index) => (
+        {Array.from({ length: Math.ceil((history.length + offset) / 2) }, (_, index) => (
           <div key={index}>
-            <b>{index + 1}.</b>
-            {moveButton(index * 2 + 1)}
-            {moveButton(index * 2 + 2)}
+            <b>{firstMoveNumber + index}.</b>
+            {moveButton(index * 2 + 1 - offset)}
+            {moveButton(index * 2 + 2 - offset)}
           </div>
         ))}
         {!history.length && <div className="empty-state">Nenhum lance registrado.</div>}

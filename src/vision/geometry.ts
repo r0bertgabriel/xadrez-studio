@@ -12,9 +12,29 @@ function cross(a: Point, b: Point, c: Point) {
  * shouldn't fail calibration — only the 4 approximate corner positions matter.
  */
 export function orderCorners(points: Point[]): [Point, Point, Point, Point] {
+  // A convex click order is kept as-is, rotated so the top-left corner comes first. The sum/diff
+  // heuristic below breaks on strong perspective (wide trapezoids) and returns duplicated corners.
+  if (points.length === 4 && isConvex(points)) return startAtTopLeft(clockwise(points))
   const bySum = [...points].sort((a, b) => a.x + a.y - (b.x + b.y))
   const byDiff = [...points].sort((a, b) => a.x - a.y - (b.x - b.y))
   return [bySum[0], byDiff[3], bySum[3], byDiff[0]]
+}
+function isConvex(points: Point[]) {
+  const signs = points.map((point, index) => cross(point, points[(index + 1) % 4], points[(index + 2) % 4]))
+  return (
+    signs.every((value) => Math.abs(value) > 0.001) &&
+    (signs.every((value) => value > 0) || signs.every((value) => value < 0))
+  )
+}
+/** Screen coordinates grow downwards, so a positive cross product means clockwise on screen. */
+function clockwise(points: Point[]) {
+  return cross(points[0], points[1], points[2]) > 0 ? points : [...points].reverse()
+}
+/** In clockwise order the top edge (lowest average y) runs from the top-left to the top-right corner. */
+function startAtTopLeft(points: Point[]): [Point, Point, Point, Point] {
+  const edgeY = (index: number) => points[index].y + points[(index + 1) % 4].y
+  const start = [1, 2, 3].reduce((best, index) => (edgeY(index) < edgeY(best) ? index : best), 0)
+  return [0, 1, 2, 3].map((offset) => points[(start + offset) % 4]) as [Point, Point, Point, Point]
 }
 export function validCorners(points: Point[]) {
   if (points.length !== 4 || points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false

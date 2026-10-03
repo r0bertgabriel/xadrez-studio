@@ -28,7 +28,8 @@ export default function App() {
     setActiveArea(area)
     // Leaving the play area stops its search; coming back restarts it so the panel is not stuck.
     if (area === 'play') session.resumeAnalysis()
-    else session.cancelAnalysis()
+    // A running review keeps going in the background; cancelling it would silently discard it.
+    else if (!session.reviewing) session.cancelAnalysis()
   }
 
   let content: ReactNode

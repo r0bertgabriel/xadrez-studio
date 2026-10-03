@@ -108,9 +108,10 @@ async function fetchLichess(user: string, signal?: AbortSignal): Promise<OnlineG
             ? '1-0'
             : game.winner === 'black'
               ? '0-1'
-              : ['draw', 'stalemate'].includes(game.status)
-                ? '½-½'
-                : '*',
+              : // A finished game without a winner is a draw (e.g. flag fall against insufficient material).
+                ['created', 'started', 'aborted', 'noStart', 'unknownFinish'].includes(game.status)
+                ? '*'
+                : '½-½',
         timeClass: game.speed,
         playedAt: game.createdAt,
         opening: game.opening ? `${game.opening.eco} · ${game.opening.name}` : null,

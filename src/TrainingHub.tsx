@@ -118,11 +118,17 @@ function TrainingBoard({
     [game, selected],
   )
 
+  // Read through a ref: the parent passes a new callback every render, and re-arming the timer on
+  // each one would advance repeatedly after a single solve.
+  const onSolvedRef = useRef(onSolved)
+  useEffect(() => {
+    onSolvedRef.current = onSolved
+  })
   useEffect(() => {
     if (!solved) return
-    const timeout = window.setTimeout(onSolved, 700)
+    const timeout = window.setTimeout(() => onSolvedRef.current(), 700)
     return () => window.clearTimeout(timeout)
-  }, [solved, onSolved])
+  }, [solved])
 
   function grade(success: boolean) {
     if (gradedRef.current) return
@@ -141,16 +147,18 @@ function TrainingBoard({
       setSelected(square)
       return
     }
-    const candidate = game.moves({ square: selected, verbose: true }).find((move) => move.to === square)
+    // chess.js lists under-promotions first; promote to the solution's piece (or a queen).
+    const promotionPiece = (position.solution[4] ?? 'q') as PieceSymbol
+    const candidate = game
+      .moves({ square: selected, verbose: true })
+      .find((move) => move.to === square && (!move.promotion || move.promotion === promotionPiece))
     if (!candidate) {
       setSelected(null)
       return
     }
-    const uci = `${candidate.from}${candidate.to}${candidate.promotion ?? ''}`
-    const normalized = position.solution.length === 5 && uci.length === 4 ? `${uci}${position.solution[4]}` : uci
-    const promotion = (normalized[4] || undefined) as PieceSymbol | undefined
+    const normalized = `${candidate.from}${candidate.to}${candidate.promotion ?? ''}`
     const next = new Chess(position.fen)
-    next.move({ from: candidate.from, to: candidate.to, promotion })
+    next.move({ from: candidate.from, to: candidate.to, promotion: candidate.promotion })
     // A position can have several mating moves; any of them is as good as the catalogued one.
     const success = normalized === position.solution || next.isCheckmate()
     const alreadyGraded = gradedRef.current
@@ -254,14 +262,15 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
 
   useEffect(() => {
     let active = true
-    Promise.all([listReviews<ReviewRow>(), listGameHistory(), listTrainingProgress()]).then(
-      ([nextReviews, nextGames, nextProgress]) => {
+    Promise.all([listReviews<ReviewRow>(), listGameHistory(), listTrainingProgress()])
+      .then(([nextReviews, nextGames, nextProgress]) => {
         if (!active) return
         setReviews(nextReviews)
         setGames(nextGames)
         setProgress(nextProgress)
-      },
-    )
+      })
+      // IndexedDB can be unavailable (private windows, full quota); the built-in catalogue still works.
+      .catch(() => {})
     return () => {
       active = false
     }
@@ -383,7 +392,11 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
     const currentProgress = progressMap.get(position.id)
     const next = nextTrainingProgress(currentProgress, success)
     next.id = position.id
-    await putTrainingProgress(next)
+    try {
+      await putTrainingProgress(next)
+    } catch {
+      /* Progress is kept for this session even if the browser refuses to persist it. */
+    }
     setProgress((items) => [...items.filter((item) => item.id !== position.id), next])
     setSession((currentStats) => {
       const streak = success ? currentStats.streak + 1 : 0
@@ -561,7 +574,8 @@ export default function TrainingHub({ pieceSet }: { pieceSet: string }) {
             </label>
           )}
           <TrainingBoard
-            key={current.id}
+            // The index is part of the key so a one-item list still remounts a fresh board after a solve.
+            key={`${current.id}:${index}`}
             position={current}
             pieceSet={pieceSet}
             progress={progressMap.get(current.id)}

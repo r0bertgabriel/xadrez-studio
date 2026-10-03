@@ -20,7 +20,12 @@ export function useVideoAspectRatio(videoRef: RefObject<HTMLVideoElement | null>
     const update = () => setRatio(video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : null)
     update()
     video.addEventListener('loadedmetadata', update)
-    return () => video.removeEventListener('loadedmetadata', update)
+    // Fires when a shared window is resized or a phone camera rotates mid-stream.
+    video.addEventListener('resize', update)
+    return () => {
+      video.removeEventListener('loadedmetadata', update)
+      video.removeEventListener('resize', update)
+    }
   }, [videoRef, stream])
 
   return ratio

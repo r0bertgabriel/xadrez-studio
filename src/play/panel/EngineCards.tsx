@@ -106,7 +106,7 @@ export function TelemetryCard({ session }: { session: PlaySession }) {
 }
 
 export function EngineSettingsCard({ session }: { session: PlaySession }) {
-  const { depth, setDepth, multiPv, setMultiPv, thinking, liveGame } = session
+  const { depth, setDepth, multiPv, setMultiPv, thinking, reviewing, liveGame } = session
   return (
     <section className="card engine-settings">
       <div className="card-title">
@@ -121,7 +121,7 @@ export function EngineSettingsCard({ session }: { session: PlaySession }) {
         Variantes <b>{multiPv}</b>
         <input type="range" min="1" max="5" value={multiPv} onChange={(e) => setMultiPv(Number(e.target.value))} />
       </label>
-      <button onClick={session.recalculate} disabled={thinking || liveGame.isGameOver()}>
+      <button onClick={session.recalculate} disabled={thinking || reviewing || liveGame.isGameOver()}>
         Recalcular
       </button>
     </section>

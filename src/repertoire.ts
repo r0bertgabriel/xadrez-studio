@@ -12,11 +12,23 @@ export class RepertoireError extends Error {}
 export function loadRepertoire(): OpeningCourse[] {
   try {
     const saved = JSON.parse(localStorage.getItem(REPERTOIRE_KEY) ?? '[]') as OpeningCourse[]
-    return Array.isArray(saved)
-      ? saved.filter((course) => course?.id && Array.isArray(course.steps) && course.steps.length)
-      : []
+    return Array.isArray(saved) ? saved.filter(isValidCourse) : []
   } catch {
     return []
+  }
+}
+
+/** Hand-edited or corrupted storage must not crash the opening studio. */
+function isValidCourse(course: OpeningCourse) {
+  if (!course || typeof course.id !== 'string' || !Array.isArray(course.steps) || !course.steps.length) return false
+  if (![course.name, course.eco, course.category].every((value) => typeof value === 'string')) return false
+  if (course.studentSide !== 'w' && course.studentSide !== 'b') return false
+  try {
+    const game = new Chess()
+    for (const step of course.steps) game.move(step.san)
+    return true
+  } catch {
+    return false
   }
 }
 

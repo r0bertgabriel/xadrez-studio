@@ -130,7 +130,8 @@ export default function OpeningTrainer({ engine, pieceSet }: { engine: Stockfish
     setImportError(null)
     try {
       const imported = await courseFromPgn(importPgn, importName, importSide)
-      persistCustomCourses([...customCourses, imported])
+      // Read the list after the await: a course removed while the ECO data was loading must stay removed.
+      persistCustomCourses([...loadRepertoire(), imported])
       setImporting(false)
       setImportName('')
       setImportPgn('')
@@ -171,7 +172,11 @@ export default function OpeningTrainer({ engine, pieceSet }: { engine: Stockfish
     if (!currentStep || checking) return
     const token = sessionTokenRef.current
     const probe = gameUpTo(course, stepIndex)
-    const candidate = probe.moves({ square: from, verbose: true }).find((move) => move.to === to)
+    // chess.js lists under-promotions first; prefer the book's own move, else promote to a queen.
+    const candidates = probe.moves({ square: from, verbose: true }).filter((move) => move.to === to)
+    const candidate =
+      candidates.find((move) => move.san === currentStep.san) ??
+      candidates.find((move) => !move.promotion || move.promotion === 'q')
     if (!candidate) {
       setSelected(null)
       return

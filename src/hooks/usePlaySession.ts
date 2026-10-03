@@ -234,7 +234,12 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     setLastReviewedSignature(null)
     setSavedSession(true)
     const engineReset = engineRef.current?.newGame() ?? Promise.resolve()
-    const analyzeStart = () => analyzePosition(next, side, sessionRef.current, { mode: nextMode })
+    const session = sessionRef.current
+    // The engine may still be booting; if a move was played meanwhile, its own analysis must not be cancelled.
+    const analyzeStart = () => {
+      if (sessionRef.current === session && gameRef.current === next)
+        void analyzePosition(next, side, session, { mode: nextMode })
+    }
     void engineReset.then(analyzeStart, analyzeStart)
   }
 
@@ -347,11 +352,9 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     resetGame()
   }
 
-  function recordProfile(rows: ReviewMove[]) {
-    if (!rows.length || !playerSide) return
-    const signature = gameRef.current.pgn()
-    if (!signature || signature === lastReviewedSignature) return
-    onReviewRecorded(playerSide, accuracyFor(rows))
+  function recordProfile(rows: ReviewMove[], side: Color, signature: string) {
+    if (!rows.length || !signature || signature === lastReviewedSignature) return
+    onReviewRecorded(side, accuracyFor(rows))
     setLastReviewedSignature(signature)
   }
 
@@ -462,6 +465,11 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
       setViewPly(null)
       setEngineError(null)
       setShowGameOver(next.isGameOver())
+      setSelected(null)
+      setPendingPromotion(null)
+      setPuzzleIndex(null)
+      setLastReviewedSignature(null)
+      resetAnnotations()
       if (!next.isGameOver())
         void analyzePosition(next, saved.side, sessionRef.current, {
           mode: saved.mode,
@@ -490,6 +498,11 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     const moves = source.history({ verbose: true })
     const totalReviewedMoves = moves.filter((move) => mode === 'analysis' || move.color === side).length
     const chartPerspective: Color = mode === 'analysis' ? 'w' : side
+    // Loading another game during the IndexedDB awaits must not receive this game's review.
+    const session = sessionRef.current
+    const ensureSameSession = () => {
+      if (sessionRef.current !== session) throw new AnalysisCancelledError()
+    }
     requestRef.current += 1
     cancelAnalysis()
     setThinking(false)
@@ -501,6 +514,7 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
 
     try {
       const cached = await getCachedReview<ReviewMove>(cacheKey)
+      ensureSameSession()
       if (cached?.rows?.length) {
         setReview(cached.rows)
         setLastReviewedSignature(signature)
@@ -571,9 +585,12 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
         updatedAt: now,
       })
       await putGameHistory({ signature, pgn: signature, side, mode, accuracy: reviewAccuracy, reviewedAt: now })
-      setStoredGames(await countGameHistory())
-      recordProfile(rows)
+      const storedCount = await countGameHistory()
+      ensureSameSession()
+      setStoredGames(storedCount)
+      recordProfile(rows, side, signature)
     } catch (error) {
+      if (sessionRef.current !== session) return
       setReview([])
       setSelectedReviewPly(null)
       if (!(error instanceof AnalysisCancelledError))
@@ -581,8 +598,9 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
     } finally {
       setReviewing(false)
       setReviewProgress(null)
-      if (playerSide && !gameRef.current.isGameOver())
-        void analyzePosition(gameRef.current, playerSide, sessionRef.current)
+      // A session left during the review (setup screen, another game) must not get a new search.
+      if (sessionRef.current === session && !gameRef.current.isGameOver())
+        void analyzePosition(gameRef.current, side, session)
     }
   }
 
@@ -598,7 +616,8 @@ export function usePlaySession({ onReviewRecorded }: { onReviewRecorded: (side: 
   }
 
   function recalculate() {
-    if (playerSide) void analyzePosition(liveGame, playerSide, sessionRef.current)
+    // A new search would cancel the review's pending analysis.
+    if (playerSide && !reviewing) void analyzePosition(liveGame, playerSide, sessionRef.current)
   }
 
   return {

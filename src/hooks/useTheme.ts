@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type Theme = 'dark' | 'light'
 
@@ -27,6 +27,14 @@ export function useTheme() {
     }
   }, [theme])
 
+  const transitionTimerRef = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current)
+    },
+    [],
+  )
+
   function toggleTheme() {
     const root = document.documentElement
     root.classList.remove('theme-switching')
@@ -35,7 +43,10 @@ export function useTheme() {
     root.classList.add('theme-switching')
     setTransitioning(true)
     setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
-    window.setTimeout(() => {
+    // A previous toggle's timer would otherwise cut this transition short.
+    if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current)
+    transitionTimerRef.current = window.setTimeout(() => {
+      transitionTimerRef.current = null
       root.classList.remove('theme-switching')
       setTransitioning(false)
     }, TRANSITION_MS)

@@ -89,8 +89,13 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
   }, [captureState, tracking])
 
   async function analyzeCurrent(nextFen: string) {
-    if (!engine || new Chess(nextFen).isGameOver()) return
+    // The previous recommendation belongs to another position; never show it over the new one.
+    setAnalysis(null)
     const requestId = ++requestRef.current
+    if (!engine || new Chess(nextFen).isGameOver()) {
+      setThinking(false)
+      return
+    }
     setThinking(true)
     setEngineError(null)
     try {
@@ -146,7 +151,14 @@ export default function ScreenAnalysis({ engine, pieceSet }: { engine: Stockfish
     setLastMove(null)
     setStatus('Reconhecendo lances a partir da posição inicial padrão.')
     setTracking(true)
-    void engine?.newGame().then(() => analyzeCurrent(gameRef.current.fen()))
+    setAnalysis(null)
+    void engine
+      ?.newGame()
+      .then(() => analyzeCurrent(gameRef.current.fen()))
+      .catch((error) => {
+        if (error instanceof AnalysisCancelledError) return
+        setEngineError(error instanceof Error ? error.message : 'Não foi possível reiniciar o Stockfish.')
+      })
   }
 
   function stopTracking() {

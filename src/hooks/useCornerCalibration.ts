@@ -1,4 +1,4 @@
-import { useCallback, useState, type MouseEvent } from 'react'
+import { useCallback, useMemo, useState, type MouseEvent } from 'react'
 import { orderCorners, validCorners } from '../vision/geometry'
 import type { Point } from '../vision/types'
 
@@ -15,6 +15,7 @@ export function useCornerCalibration() {
   }, [])
   const reset = useCallback(() => setCorners([]), [])
   const calibrated = validCorners(corners)
-  const quad = calibrated ? orderCorners(corners) : null
+  // Stable identity: the screen sampler effect depends on `quad` and would restart on every render.
+  const quad = useMemo(() => (calibrated ? orderCorners(corners) : null), [calibrated, corners])
   return { corners, addCorner, reset, calibrated, quad }
 }

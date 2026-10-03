@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { displayEval, expectedScore, formatEval, scoreForSide, scoreOf } from '../../chess-analysis'
+import { moveLabelFor } from '../../game-helpers'
 import type { PlaySession } from '../../hooks/usePlaySession'
 
 type EvaluationState = 'winning' | 'better' | 'equal' | 'worse' | 'losing'
@@ -74,9 +75,11 @@ function useEngineEvaluations(engine: PlaySession['engine'], currentFen: string)
 function EvaluationChart({
   points,
   activePly,
+  startFen,
   onSelect,
 }: {
   points: (number | null)[]
+  startFen: string
   activePly: number
   onSelect: (ply: number) => void
 }) {
@@ -120,7 +123,7 @@ function EvaluationChart({
             title={
               ply === 0
                 ? 'Posição inicial'
-                : `Lance ${Math.ceil(ply / 2)}${ply % 2 ? '' : '…'}${value === null ? '' : ` · ${Math.round(value * 100)}%`}`
+                : `Lance ${moveLabelFor(startFen, ply).number}${moveLabelFor(startFen, ply).color === 'w' ? '' : '…'}${value === null ? '' : ` · ${Math.round(value * 100)}%`}`
             }
             aria-label={`Ver posição após ${ply} meio-lances`}
           />
@@ -138,19 +141,28 @@ export default function EvaluationCard({ session }: { session: PlaySession }) {
   }, [liveGame])
   const { live, settled } = useEngineEvaluations(session.engine, fens[fens.length - 1])
 
+  // Finished games are never sent to Stockfish; score them from the result instead of waiting forever.
+  const gameOver = liveGame.isGameOver()
+  const checkmate = liveGame.isCheckmate()
+  const terminalWhite = gameOver ? (checkmate ? (liveGame.turn() === 'w' ? -10000 : 10000) : 0) : undefined
   // While Stockfish is still calculating, show its running estimate instead of an empty card.
-  const whiteScore = analysis ? scoreOf(analysis) : live?.score
+  const whiteScore = terminalWhite ?? (analysis ? scoreOf(analysis) : live?.score)
   const hasEval = whiteScore !== undefined
   const score = hasEval ? scoreForSide(whiteScore, perspective) : 0
-  const provisional = !analysis && hasEval
+  const provisional = !analysis && hasEval && !gameOver
   const depth = analysis?.lines[0]?.depth ?? live?.depth ?? null
   const state = hasEval ? evaluationState(score) : 'equal'
-  const copy = hasEval
-    ? EVALUATION_COPY[state]
-    : {
-        label: 'Aguardando avaliação',
-        description: 'A engine mostrará o balanço da posição assim que começar o cálculo.',
+  const copy = gameOver
+    ? {
+        label: checkmate ? (score > 0 ? 'Xeque-mate a favor' : 'Xeque-mate contra') : 'Empate',
+        description: 'A partida terminou; não há mais lances a avaliar.',
       }
+    : hasEval
+      ? EVALUATION_COPY[state]
+      : {
+          label: 'Aguardando avaliação',
+          description: 'A engine mostrará o balanço da posição assim que começar o cálculo.',
+        }
   const chance = expectation(score)
 
   const currentPly = fens.length - 1
@@ -163,13 +175,17 @@ export default function EvaluationCard({ session }: { session: PlaySession }) {
   const delta = hasEval && previous !== null && !isMate(score) && !isMate(previous) ? score - previous : null
   const swing = previous !== null && hasEval ? Math.round((chance - expectation(previous)) * 100) : null
 
-  const displayed = hasEval
-    ? analysis
-      ? formatEval(analysis, perspective)
-      : isMate(score)
-        ? `${score > 0 ? 'M+' : 'M−'}${10000 - Math.abs(score)}`
-        : displayEval(score)
-    : '—'
+  const displayed = gameOver
+    ? checkmate
+      ? `${score > 0 ? '+' : '−'}#`
+      : '½'
+    : hasEval
+      ? analysis
+        ? formatEval(analysis, perspective)
+        : isMate(score)
+          ? `${score > 0 ? 'M+' : 'M−'}${10000 - Math.abs(score)}`
+          : displayEval(score)
+      : '—'
   const ownerLabel = mode === 'analysis' ? 'Brancas' : 'Você'
 
   return (
@@ -243,7 +259,12 @@ export default function EvaluationCard({ session }: { session: PlaySession }) {
             <span>Evolução da partida</span>
             <small>{ownerLabel} ↑</small>
           </div>
-          <EvaluationChart points={points} activePly={viewPly ?? currentPly} onSelect={viewMove} />
+          <EvaluationChart
+            points={points}
+            activePly={viewPly ?? currentPly}
+            startFen={session.startFen}
+            onSelect={viewMove}
+          />
         </div>
       )}
 

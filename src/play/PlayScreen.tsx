@@ -34,8 +34,8 @@ function EngineStatus({ session }: { session: PlaySession }) {
 
 export default function PlayScreen({ session, appearance, profile }: Props) {
   const [panelCollapsed, setPanelCollapsed] = useState(false)
-  const { mode, history, engineError, mateAlert, result } = session
-  const moveNumber = Math.floor(history.length / 2) + 1
+  const { mode, liveGame, engineError, mateAlert, result } = session
+  const moveNumber = liveGame.moveNumber()
 
   return (
     <main className="app-shell">

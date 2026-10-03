@@ -5,6 +5,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="$ROOT_DIR/.xadrez-dev.pid"
 LOG_FILE="$ROOT_DIR/.xadrez-dev.log"
 PORT="${PORT:-5173}"
+# HTTPS=1 serves a self-signed certificate so other devices on the LAN get a secure context
+# (camera, screen capture and the multithreaded engine all require one).
+if [[ "${HTTPS:-0}" == "1" ]]; then
+  SCHEME="https"
+  MODE_ARGS=(--mode lan)
+else
+  SCHEME="http"
+  MODE_ARGS=()
+fi
 STOCKFISH_JS="$ROOT_DIR/node_modules/stockfish/bin/stockfish-19-lite-single.js"
 STOCKFISH_WASM="$ROOT_DIR/node_modules/stockfish/bin/stockfish-19-lite-single.wasm"
 
@@ -24,7 +33,7 @@ if [[ -f "$PID_FILE" ]]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
     echo "Xadrez Coach já está rodando (PID $OLD_PID)."
-    echo "Acesse: http://localhost:$PORT"
+    echo "Acesse: $SCHEME://localhost:$PORT"
     exit 0
   fi
   rm -f "$PID_FILE"
@@ -44,9 +53,9 @@ npm run prepare:engine
 
 echo "Iniciando Xadrez Coach na porta $PORT..."
 if command -v setsid >/dev/null 2>&1; then
-  nohup setsid npm run dev -- --host 0.0.0.0 --port "$PORT" >>"$LOG_FILE" 2>&1 < /dev/null &
+  nohup setsid npm run dev -- --host 0.0.0.0 --port "$PORT" "${MODE_ARGS[@]}" >>"$LOG_FILE" 2>&1 < /dev/null &
 else
-  nohup npm run dev -- --host 0.0.0.0 --port "$PORT" >>"$LOG_FILE" 2>&1 < /dev/null &
+  nohup npm run dev -- --host 0.0.0.0 --port "$PORT" "${MODE_ARGS[@]}" >>"$LOG_FILE" 2>&1 < /dev/null &
 fi
 
 PID=$!
@@ -63,6 +72,6 @@ fi
 
 echo "Xadrez Coach iniciado com sucesso."
 echo "PID: $PID"
-echo "URL: http://localhost:$PORT"
+echo "URL: $SCHEME://localhost:$PORT"
 echo "Log: $LOG_FILE"
 echo "Para parar: ./stop.sh"

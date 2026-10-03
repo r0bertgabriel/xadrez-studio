@@ -1,0 +1,4 @@
+# Netlify / Cloudflare Pages: cross-origin isolation for the multithreaded Stockfish build.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless

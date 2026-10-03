@@ -9,6 +9,8 @@ export function useStockfish() {
   useEffect(() => {
     const instance = new StockfishEngine()
     engineRef.current = instance
+    // The worker must be created in an effect so StrictMode's remount gets a fresh one after cleanup.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEngine(instance)
     return () => {
       instance.cancelAnalysis()

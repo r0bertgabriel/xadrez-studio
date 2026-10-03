@@ -70,7 +70,11 @@ function openDb(): Promise<IDBDatabase | null> {
   })
 }
 
-async function transaction<T>(storeName: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
+async function transaction<T>(
+  storeName: string,
+  mode: IDBTransactionMode,
+  action: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T | null> {
   try {
     const db = await openDb()
     if (!db) return null
@@ -80,7 +84,10 @@ async function transaction<T>(storeName: string, mode: IDBTransactionMode, actio
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
       tx.oncomplete = () => db.close()
-      tx.onerror = () => { db.close(); reject(tx.error) }
+      tx.onerror = () => {
+        db.close()
+        reject(tx.error)
+      }
     })
   } catch {
     return null
@@ -119,12 +126,22 @@ export async function putTrainingProgress(entry: TrainingProgress) {
   await transaction<IDBValidKey>(TRAINING_STORE, 'readwrite', (store) => store.put(entry))
 }
 
-export function nextTrainingProgress(current: TrainingProgress | undefined, success: boolean, now = Date.now()): TrainingProgress {
+export function nextTrainingProgress(
+  current: TrainingProgress | undefined,
+  success: boolean,
+  now = Date.now(),
+): TrainingProgress {
   const attempts = (current?.attempts ?? 0) + 1
   const successes = (current?.successes ?? 0) + (success ? 1 : 0)
   const streak = success ? (current?.streak ?? 0) + 1 : 0
   const previous = current?.intervalDays ?? 0
-  const intervalDays = success ? (streak === 1 ? 1 : streak === 2 ? 3 : Math.min(60, Math.max(4, Math.round(previous * 2.3)))) : 0
+  const intervalDays = success
+    ? streak === 1
+      ? 1
+      : streak === 2
+        ? 3
+        : Math.min(60, Math.max(4, Math.round(previous * 2.3)))
+    : 0
   const nextReviewAt = success ? now + intervalDays * 86_400_000 : now + 10 * 60_000
   return { id: current?.id ?? '', attempts, successes, streak, intervalDays, nextReviewAt, lastReviewedAt: now }
 }

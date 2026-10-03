@@ -22,7 +22,9 @@ export function uciToMove(uci: string) {
   return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: (uci[4] || 'q') as PieceSymbol }
 }
 
-export function scoreForSide(whiteScore: number, side: Color) { return side === 'w' ? whiteScore : -whiteScore }
+export function scoreForSide(whiteScore: number, side: Color) {
+  return side === 'w' ? whiteScore : -whiteScore
+}
 
 export function scoreOf(analysis: EngineAnalysis) {
   const line = analysis.lines[0]
@@ -81,7 +83,8 @@ export function reviewLoss(before: ReviewEvaluation, after: ReviewEvaluation) {
   return Math.max(0, Math.round((before.cp ?? 0) - (after.cp ?? 0)))
 }
 
-function expectedScore(evaluation: ReviewEvaluation) {
+/** Expected score (0–1) for the side the evaluation belongs to, on the same logistic curve used to grade moves. */
+export function expectedScore(evaluation: ReviewEvaluation) {
   if (evaluation.mate !== null) return evaluation.mate > 0 ? 1 : 0
   const cp = Math.max(-1200, Math.min(1200, evaluation.cp ?? 0))
   return 1 / (1 + Math.exp(-cp / 260))
@@ -105,7 +108,11 @@ export function classifyReview(loss: number, isBest: boolean, before: ReviewEval
 export function moveToSan(game: Chess, uci: string) {
   if (!uci || uci === '(none)') return '—'
   const probe = cloneGame(game)
-  try { return probe.move(uciToMove(uci)).san } catch { return uci }
+  try {
+    return probe.move(uciToMove(uci)).san
+  } catch {
+    return uci
+  }
 }
 
 function square(file: number, rank: number): Square | null {
@@ -129,19 +136,48 @@ export function attacksFrom(game: Chess, origin: Square): Square[] {
   }
   if (piece.type === 'p') {
     const dr = piece.color === 'w' ? 1 : -1
-    for (const df of [-1, 1]) { const target = square(file + df, rank + dr); if (target) targets.push(target) }
+    for (const df of [-1, 1]) {
+      const target = square(file + df, rank + dr)
+      if (target) targets.push(target)
+    }
   } else if (piece.type === 'n') {
-    for (const [df, dr] of [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]]) {
-      const target = square(file + df, rank + dr); if (target) targets.push(target)
+    for (const [df, dr] of [
+      [1, 2],
+      [2, 1],
+      [2, -1],
+      [1, -2],
+      [-1, -2],
+      [-2, -1],
+      [-2, 1],
+      [-1, 2],
+    ]) {
+      const target = square(file + df, rank + dr)
+      if (target) targets.push(target)
     }
   } else if (piece.type === 'k') {
-    for (let df = -1; df <= 1; df += 1) for (let dr = -1; dr <= 1; dr += 1) {
-      if (!df && !dr) continue
-      const target = square(file + df, rank + dr); if (target) targets.push(target)
-    }
+    for (let df = -1; df <= 1; df += 1)
+      for (let dr = -1; dr <= 1; dr += 1) {
+        if (!df && !dr) continue
+        const target = square(file + df, rank + dr)
+        if (target) targets.push(target)
+      }
   } else {
-    if (piece.type === 'b' || piece.type === 'q') for (const [df, dr] of [[1,1],[1,-1],[-1,1],[-1,-1]]) addRay(df, dr)
-    if (piece.type === 'r' || piece.type === 'q') for (const [df, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) addRay(df, dr)
+    if (piece.type === 'b' || piece.type === 'q')
+      for (const [df, dr] of [
+        [1, 1],
+        [1, -1],
+        [-1, 1],
+        [-1, -1],
+      ])
+        addRay(df, dr)
+    if (piece.type === 'r' || piece.type === 'q')
+      for (const [df, dr] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ])
+        addRay(df, dr)
   }
   return targets
 }
@@ -163,13 +199,16 @@ function forkDescription(game: Chess, movedTo: Square, mover: Color) {
     .map((target) => ({ target, piece: game.get(target) }))
     .filter(({ piece }) => piece && piece.color !== mover && PIECE_VALUES[piece.type] >= 3)
   if (valuable.length < 2) return null
-  return `ataque duplo em ${valuable.slice(0, 2).map(({ target }) => target).join(' e ')}`
+  return `ataque duplo em ${valuable
+    .slice(0, 2)
+    .map(({ target }) => target)
+    .join(' e ')}`
 }
 
 function sliderDirections(piece: PieceSymbol) {
   const directions: Array<[number, number]> = []
-  if (piece === 'b' || piece === 'q') directions.push([1,1],[1,-1],[-1,1],[-1,-1])
-  if (piece === 'r' || piece === 'q') directions.push([1,0],[-1,0],[0,1],[0,-1])
+  if (piece === 'b' || piece === 'q') directions.push([1, 1], [1, -1], [-1, 1], [-1, -1])
+  if (piece === 'r' || piece === 'q') directions.push([1, 0], [-1, 0], [0, 1], [0, -1])
   return directions
 }
 
@@ -190,7 +229,13 @@ function rayVictims(game: Chess, origin: Square, mover: Color) {
       victims.push({ square: target, value: PIECE_VALUES[targetPiece.type] })
       if (victims.length === 2) break
     }
-    if (victims.length === 2) pairs.push({ first: victims[0].square, second: victims[1].square, firstValue: victims[0].value, secondValue: victims[1].value })
+    if (victims.length === 2)
+      pairs.push({
+        first: victims[0].square,
+        second: victims[1].square,
+        firstValue: victims[0].value,
+        secondValue: victims[1].value,
+      })
   }
   return pairs
 }
@@ -209,7 +254,8 @@ function discoveredAttackDescription(before: Chess, after: Chess, move: Move, mo
   for (const sq of ALL_SQUARES) {
     const piece = after.get(sq)
     if (!piece || piece.color === mover || PIECE_VALUES[piece.type] < 3) continue
-    if (!before.isAttacked(sq, mover) && after.isAttacked(sq, mover) && !movedPieceTargets.has(sq)) return `ataque descoberto contra ${sq}`
+    if (!before.isAttacked(sq, mover) && after.isAttacked(sq, mover) && !movedPieceTargets.has(sq))
+      return `ataque descoberto contra ${sq}`
   }
   return null
 }
@@ -221,9 +267,14 @@ export function tacticalIdeas(game: Chess, uci: string) {
   const mover = probe.turn()
   const enemy: Color = mover === 'w' ? 'b' : 'w'
   let move: Move
-  try { move = probe.move(uciToMove(uci)) } catch { return [] }
+  try {
+    move = probe.move(uciToMove(uci))
+  } catch {
+    return []
+  }
   const ideas: string[] = []
-  if (move.isCapture()) ideas.push(`captura em ${move.to}${move.captured ? ` (${PIECE_VALUES[move.captured]} ponto(s) de material)` : ''}`)
+  if (move.isCapture())
+    ideas.push(`captura em ${move.to}${move.captured ? ` (${PIECE_VALUES[move.captured]} ponto(s) de material)` : ''}`)
   if (probe.isCheckmate()) ideas.push('xeque-mate imediato')
   else if (probe.inCheck()) ideas.push('xeque com ganho de tempo')
   if (move.isPromotion()) ideas.push('promoção de peão')
@@ -242,7 +293,8 @@ export function tacticalIdeas(game: Chess, uci: string) {
   const enemyHanging = findHangingPieces(probe, enemy)
   if (enemyHanging.length) ideas.push(`deixa ${enemyHanging[0].square} pendurada e sem defesa`)
   const movedPiece = probe.get(move.to)
-  if (movedPiece && movedPiece.type !== 'k' && probe.isAttacked(move.to, enemy) && !probe.isAttacked(move.to, mover)) ideas.push(`atenção: ${move.to} fica sem defesa`)
+  if (movedPiece && movedPiece.type !== 'k' && probe.isAttacked(move.to, enemy) && !probe.isAttacked(move.to, mover))
+    ideas.push(`atenção: ${move.to} fica sem defesa`)
 
   if (move.piece === 'q' && move.isCapture()) ideas.push('ativa a dama com ganho de material')
   if (!ideas.length) ideas.push('melhora coordenação e atividade das peças')
@@ -257,6 +309,9 @@ export function mateMessage(analysis: EngineAnalysis | null, perspective: Color,
   const mate = analysis?.lines[0]?.mate
   if (mate === null || mate === undefined || mate === 0) return null
   const relative = scoreForSide(mate, perspective)
-  if (mode === 'analysis') return relative > 0 ? `Brancas têm mate em ${Math.abs(relative)}` : `Pretas têm mate em ${Math.abs(relative)}`
-  return relative > 0 ? `Você tem mate em ${Math.abs(relative)}` : `Atenção: o adversário ameaça mate em ${Math.abs(relative)}`
+  if (mode === 'analysis')
+    return relative > 0 ? `Brancas têm mate em ${Math.abs(relative)}` : `Pretas têm mate em ${Math.abs(relative)}`
+  return relative > 0
+    ? `Você tem mate em ${Math.abs(relative)}`
+    : `Atenção: o adversário ameaça mate em ${Math.abs(relative)}`
 }

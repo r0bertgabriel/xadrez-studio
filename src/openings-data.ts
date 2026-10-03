@@ -54,7 +54,11 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'e5', comment: 'Resposta simétrica no centro.' },
       { san: 'Nf3', comment: 'Ataca e5 e desenvolve.' },
       { san: 'Nc6', comment: 'Defende o peão central.' },
-      { san: 'Bb5', comment: 'A ideia da Espanhola: pressiona indiretamente e5, pois o cavalo que o defende está preso pela ameaça a e5 via troca do Bb5.' },
+      {
+        san: 'Bb5',
+        comment:
+          'A ideia da Espanhola: pressiona indiretamente e5, pois o cavalo que o defende está preso pela ameaça a e5 via troca do Bb5.',
+      },
       { san: 'a6', comment: 'A "variante Morphy": pergunta ao bispo, ganhando tempo se ele recuar ou trocar.' },
       { san: 'Ba4', comment: 'Mantém a pressão na diagonal, mirando eventualmente Nc6 outra vez.' },
       { san: 'Nf6', comment: 'Contra-ataca e4 e desenvolve com tempo.' },
@@ -71,7 +75,11 @@ export const OPENING_COURSES: OpeningCourse[] = [
     studentSide: 'b',
     steps: [
       { san: 'e4', comment: 'As brancas ocupam o centro.' },
-      { san: 'c5', comment: 'A Siciliana: as pretas lutam pelo centro de forma assimétrica, buscando contra-jogo no flanco da dama.' },
+      {
+        san: 'c5',
+        comment:
+          'A Siciliana: as pretas lutam pelo centro de forma assimétrica, buscando contra-jogo no flanco da dama.',
+      },
       { san: 'Nf3', comment: 'Desenvolve preparando d4.' },
       { san: 'd6', comment: 'Prepara ...Nf6 sem permitir e5 com tempo e abre diagonal para o bispo de casas claras.' },
       { san: 'd4', comment: 'Golpe central típico das aberturas semiabertas.' },
@@ -79,7 +87,10 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'Nxd4', comment: 'Recaptura centralizando o cavalo.' },
       { san: 'Nf6', comment: 'Ataca e4 e desenvolve.' },
       { san: 'Nc3', comment: 'Defende e4 e desenvolve.' },
-      { san: 'a6', comment: 'O lance que dá nome à variante: impede Bb5/Nb5 e prepara ...e5 ou ...b5 com flexibilidade máxima.' },
+      {
+        san: 'a6',
+        comment: 'O lance que dá nome à variante: impede Bb5/Nb5 e prepara ...e5 ou ...b5 com flexibilidade máxima.',
+      },
     ],
   },
   {
@@ -99,7 +110,11 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'Nxd4', comment: 'Cavalo centralizado.' },
       { san: 'Nf6', comment: 'Pressiona e4.' },
       { san: 'Nc3', comment: 'Defende e4.' },
-      { san: 'g6', comment: 'Prepara o fianchetto: o bispo em g7 vai apontar para a diagonal a1-h8, geralmente contra um roque curto branco.' },
+      {
+        san: 'g6',
+        comment:
+          'Prepara o fianchetto: o bispo em g7 vai apontar para a diagonal a1-h8, geralmente contra um roque curto branco.',
+      },
     ],
   },
   {
@@ -129,13 +144,20 @@ export const OPENING_COURSES: OpeningCourse[] = [
     studentSide: 'b',
     steps: [
       { san: 'e4', comment: 'Controle central.' },
-      { san: 'c6', comment: 'Prepara ...d5 mantendo a diagonal do bispo de casas claras livre para desenvolvê-lo antes de ...e6.' },
+      {
+        san: 'c6',
+        comment: 'Prepara ...d5 mantendo a diagonal do bispo de casas claras livre para desenvolvê-lo antes de ...e6.',
+      },
       { san: 'd4', comment: 'Amplia o centro.' },
       { san: 'd5', comment: 'Desafia o centro branco.' },
       { san: 'Nc3', comment: 'Defende e4.' },
       { san: 'dxe4', comment: 'As pretas resolvem a tensão central capturando.' },
       { san: 'Nxe4', comment: 'Recaptura natural, centralizando o cavalo.' },
-      { san: 'Bf5', comment: 'Desenvolve o bispo problemático antes de jogar ...e6, a grande vantagem estrutural da Caro-Kann sobre a Francesa.' },
+      {
+        san: 'Bf5',
+        comment:
+          'Desenvolve o bispo problemático antes de jogar ...e6, a grande vantagem estrutural da Caro-Kann sobre a Francesa.',
+      },
     ],
   },
   {
@@ -149,7 +171,10 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'e4', comment: 'Controle central.' },
       { san: 'd5', comment: 'Desafia e4 imediatamente, aceitando trocar peças no centro.' },
       { san: 'exd5', comment: 'As brancas capturam, ganhando um tempo de desenvolvimento.' },
-      { san: 'Qxd5', comment: 'Recaptura com a dama; ela ficará exposta a um tempo de ataque, mas as pretas obtêm um jogo simples.' },
+      {
+        san: 'Qxd5',
+        comment: 'Recaptura com a dama; ela ficará exposta a um tempo de ataque, mas as pretas obtêm um jogo simples.',
+      },
       { san: 'Nc3', comment: 'Desenvolve atacando a dama e ganhando tempo.' },
       { san: 'Qa5', comment: 'Recuo mais popular: mantém pressão em e5/c3 e prepara ...Nf6, ...c6, ...Bf5.' },
     ],
@@ -180,8 +205,16 @@ export const OPENING_COURSES: OpeningCourse[] = [
     steps: [
       { san: 'd4', comment: 'Controle central pelo lado da dama.' },
       { san: 'd5', comment: 'Resposta simétrica clássica.' },
-      { san: 'c4', comment: 'O "gambito": oferece o peão c para desviar a atenção do centro, mas se capturado as brancas o recuperam com facilidade.' },
-      { san: 'e6', comment: 'As pretas recusam a captura e reforçam d5 solidamente, abrindo a diagonal do bispo de casas claras... por enquanto trancada.' },
+      {
+        san: 'c4',
+        comment:
+          'O "gambito": oferece o peão c para desviar a atenção do centro, mas se capturado as brancas o recuperam com facilidade.',
+      },
+      {
+        san: 'e6',
+        comment:
+          'As pretas recusam a captura e reforçam d5 solidamente, abrindo a diagonal do bispo de casas claras... por enquanto trancada.',
+      },
       { san: 'Nc3', comment: 'Desenvolve e mantém a pressão central.' },
       { san: 'Nf6', comment: 'Desenvolvimento natural, pressionando d5 e e4.' },
     ],
@@ -197,7 +230,10 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'd4', comment: 'Controle central.' },
       { san: 'd5', comment: 'Resposta simétrica.' },
       { san: 'c4', comment: 'Desafia o centro preto.' },
-      { san: 'c6', comment: 'Defende d5 mantendo livre a diagonal para o bispo de casas claras, que poderá sair antes de ...e6.' },
+      {
+        san: 'c6',
+        comment: 'Defende d5 mantendo livre a diagonal para o bispo de casas claras, que poderá sair antes de ...e6.',
+      },
       { san: 'Nf3', comment: 'Desenvolvimento flexível.' },
       { san: 'Nf6', comment: 'Desenvolvimento simétrico, mantendo a tensão central.' },
     ],
@@ -207,16 +243,24 @@ export const OPENING_COURSES: OpeningCourse[] = [
     name: 'Sistema Londres',
     eco: 'D02',
     category: 'Aberturas Fechadas (1.d4)',
-    summary: 'Sistema de desenvolvimento fácil de aprender: o bispo sai antes de e3, quase independente do que as pretas jogam.',
+    summary:
+      'Sistema de desenvolvimento fácil de aprender: o bispo sai antes de e3, quase independente do que as pretas jogam.',
     studentSide: 'w',
     steps: [
       { san: 'd4', comment: 'Controle central.' },
       { san: 'd5', comment: 'Resposta natural das pretas.' },
       { san: 'Nf3', comment: 'Desenvolve com flexibilidade.' },
       { san: 'Nf6', comment: 'Desenvolvimento simétrico.' },
-      { san: 'Bf4', comment: 'A marca do Sistema Londres: o bispo sai antes do peão e3 travá-lo, mirando a diagonal b8-h2.' },
+      {
+        san: 'Bf4',
+        comment: 'A marca do Sistema Londres: o bispo sai antes do peão e3 travá-lo, mirando a diagonal b8-h2.',
+      },
       { san: 'e6', comment: 'As pretas preparam o desenvolvimento do bispo de casas claras e o roque.' },
-      { san: 'e3', comment: 'Agora sim as brancas fecham a diagonal, com a estrutura já montada e um plano fácil de repetir em qualquer partida.' },
+      {
+        san: 'e3',
+        comment:
+          'Agora sim as brancas fecham a diagonal, com a estrutura já montada e um plano fácil de repetir em qualquer partida.',
+      },
     ],
   },
   {
@@ -232,7 +276,11 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'c4', comment: 'Amplia o espaço central.' },
       { san: 'e6', comment: 'Prepara ...Bb4, a ideia central da defesa.' },
       { san: 'Nc3', comment: 'Desenvolve, mas expõe o cavalo a um pino.' },
-      { san: 'Bb4', comment: 'O lance que dá nome à abertura: pina o cavalo, pressionando o controle de e4 e ameaçando dobrar peões brancos.' },
+      {
+        san: 'Bb4',
+        comment:
+          'O lance que dá nome à abertura: pina o cavalo, pressionando o controle de e4 e ameaçando dobrar peões brancos.',
+      },
     ],
   },
   {
@@ -248,7 +296,10 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'c4', comment: 'Amplia o espaço.' },
       { san: 'g6', comment: 'Prepara o fianchetto característico da Índia do Rei.' },
       { san: 'Nc3', comment: 'Desenvolve e prepara e4.' },
-      { san: 'Bg7', comment: 'O bispo fianchetado controla a grande diagonal e apoiará o rompimento central ...e5 mais tarde.' },
+      {
+        san: 'Bg7',
+        comment: 'O bispo fianchetado controla a grande diagonal e apoiará o rompimento central ...e5 mais tarde.',
+      },
     ],
   },
   {
@@ -264,7 +315,11 @@ export const OPENING_COURSES: OpeningCourse[] = [
       { san: 'c4', comment: 'Amplia o espaço.' },
       { san: 'g6', comment: 'Prepara o fianchetto.' },
       { san: 'Nc3', comment: 'Desenvolve.' },
-      { san: 'd5', comment: 'A ideia Grünfeld: desafia o centro imediatamente, aceitando ceder um grande centro branco de peões para atacá-lo depois com o bispo em g7 e peças ativas.' },
+      {
+        san: 'd5',
+        comment:
+          'A ideia Grünfeld: desafia o centro imediatamente, aceitando ceder um grande centro branco de peões para atacá-lo depois com o bispo em g7 e peças ativas.',
+      },
     ],
   },
   {
@@ -272,10 +327,15 @@ export const OPENING_COURSES: OpeningCourse[] = [
     name: 'Abertura Inglesa',
     eco: 'A10',
     category: 'Aberturas de Flanco',
-    summary: 'Abertura flexível pelo flanco da dama que pode transpor para estruturas fechadas ou de Índia do Rei com cores trocadas.',
+    summary:
+      'Abertura flexível pelo flanco da dama que pode transpor para estruturas fechadas ou de Índia do Rei com cores trocadas.',
     studentSide: 'w',
     steps: [
-      { san: 'c4', comment: 'Controla d5 a distância sem comprometer o centro imediatamente, mantendo várias transposições possíveis.' },
+      {
+        san: 'c4',
+        comment:
+          'Controla d5 a distância sem comprometer o centro imediatamente, mantendo várias transposições possíveis.',
+      },
       { san: 'e5', comment: 'As pretas respondem no centro, criando uma posição de Siciliana com cores trocadas.' },
       { san: 'Nc3', comment: 'Desenvolve controlando d5.' },
       { san: 'Nf6', comment: 'Desenvolvimento natural.' },
@@ -287,7 +347,8 @@ export const OPENING_COURSES: OpeningCourse[] = [
     name: 'Abertura Reti',
     eco: 'A04',
     category: 'Aberturas de Flanco',
-    summary: 'Sistema hipermoderno onde as brancas controlam o centro a distância e decidem o plano depois de ver as pretas.',
+    summary:
+      'Sistema hipermoderno onde as brancas controlam o centro a distância e decidem o plano depois de ver as pretas.',
     studentSide: 'w',
     steps: [
       { san: 'Nf3', comment: 'Controla e5/d4 com uma peça em vez de peões, mantendo total flexibilidade de plano.' },
@@ -307,9 +368,15 @@ export const OPENING_COURSES: OpeningCourse[] = [
     steps: [
       { san: 'e4', comment: 'Controle central.' },
       { san: 'e5', comment: 'Resposta simétrica.' },
-      { san: 'Nc3', comment: 'Desenvolve defendendo a possibilidade futura de f4 sem enfraquecer o rei imediatamente.' },
+      {
+        san: 'Nc3',
+        comment: 'Desenvolve defendendo a possibilidade futura de f4 sem enfraquecer o rei imediatamente.',
+      },
       { san: 'Nf6', comment: 'Desenvolvimento natural, pressionando e4.' },
-      { san: 'f4', comment: 'Rompimento tático que busca abrir linhas rapidamente, no estilo dos gambitos do século XIX.' },
+      {
+        san: 'f4',
+        comment: 'Rompimento tático que busca abrir linhas rapidamente, no estilo dos gambitos do século XIX.',
+      },
     ],
   },
   {
@@ -317,13 +384,17 @@ export const OPENING_COURSES: OpeningCourse[] = [
     name: 'Gambito do Rei',
     eco: 'C30',
     category: 'Aberturas Abertas (1.e4 e5)',
-    summary: 'Sacrifício de peão para abrir a coluna f e atacar rapidamente, uma das aberturas mais antigas e agressivas.',
+    summary:
+      'Sacrifício de peão para abrir a coluna f e atacar rapidamente, uma das aberturas mais antigas e agressivas.',
     studentSide: 'w',
     steps: [
       { san: 'e4', comment: 'Controle central.' },
       { san: 'e5', comment: 'Resposta simétrica.' },
       { san: 'f4', comment: 'Oferece um peão para abrir a coluna f e ganhar tempo de desenvolvimento contra e5.' },
-      { san: 'exf4', comment: 'As pretas aceitam o gambito, ficando com um peão a mais mas atrasadas no desenvolvimento.' },
+      {
+        san: 'exf4',
+        comment: 'As pretas aceitam o gambito, ficando com um peão a mais mas atrasadas no desenvolvimento.',
+      },
       { san: 'Nf3', comment: 'Impede ...Qh4+ e prepara recuperar o peão com iniciativa.' },
     ],
   },

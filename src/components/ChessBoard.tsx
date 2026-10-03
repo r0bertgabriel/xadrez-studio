@@ -1,27 +1,49 @@
 import { type Chess, type Color, type PieceSymbol, type Square } from 'chess.js'
-import type { DragEvent, ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { displayedSquares, isLightSquare, pieceAsset } from '../board-geometry'
 
-const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
-const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
-const PIECE_NAMES: Record<PieceSymbol, string> = { p: 'P', n: 'N', b: 'B', r: 'R', q: 'Q', k: 'K' }
 const PIECE_SYMBOLS: Record<string, string> = {
-  wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
-  bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚',
+  wp: '♙',
+  wn: '♘',
+  wb: '♗',
+  wr: '♖',
+  wq: '♕',
+  wk: '♔',
+  bp: '♟',
+  bn: '♞',
+  bb: '♝',
+  br: '♜',
+  bq: '♛',
+  bk: '♚',
 }
 
-export function displayedSquares(side: Color) {
-  const files = side === 'w' ? [...FILES] : [...FILES].reverse()
-  const ranks = side === 'w' ? [...RANKS] : [...RANKS].reverse()
-  return ranks.flatMap((rank) => files.map((file) => `${file}${rank}` as Square))
+const PIECE_LABELS: Record<PieceSymbol, string> = {
+  p: 'peão',
+  n: 'cavalo',
+  b: 'bispo',
+  r: 'torre',
+  q: 'dama',
+  k: 'rei',
+}
+const NAVIGATION_KEYS: Record<string, [number, number]> = {
+  ArrowUp: [-1, 0],
+  ArrowDown: [1, 0],
+  ArrowLeft: [0, -1],
+  ArrowRight: [0, 1],
 }
 
-export function isLightSquare(square: Square) {
-  const file = FILES.indexOf(square[0] as (typeof FILES)[number])
-  return (file + Number(square[1])) % 2 === 0
-}
-
-export function pieceAsset(set: string, color: Color, piece: PieceSymbol) {
-  return `/pieces/${set}/${color}${PIECE_NAMES[piece]}.svg`
+function squareLabel(
+  square: Square,
+  piece: { type: PieceSymbol; color: Color } | undefined,
+  selected: boolean,
+  target: boolean,
+) {
+  const feminine = piece?.type === 'r' || piece?.type === 'q'
+  const color = piece?.color === 'w' ? (feminine ? 'branca' : 'branco') : feminine ? 'preta' : 'preto'
+  const parts: string[] = [square, piece ? `${PIECE_LABELS[piece.type]} ${color}` : 'vazia']
+  if (selected) parts.push('selecionada')
+  if (target) parts.push(piece ? 'captura possível' : 'destino possível')
+  return parts.join(', ')
 }
 
 type Props = {
@@ -38,38 +60,108 @@ type Props = {
   onDragStart?: (square: Square, event: DragEvent) => void
   onDrop?: (square: Square, event: DragEvent) => void
   showCoordinates?: boolean
+  /** Escape pressed while a square has focus. */
+  onCancel?: () => void
   children?: ReactNode
 }
 
 export default function ChessBoard({
-  game, orientation, pieceSet, ariaLabel, selected = null, legalTargets = new Set<Square>(), lastMove = null,
-  classForSquare, onSquareClick, draggable, onDragStart, onDrop, showCoordinates = false, children,
+  game,
+  orientation,
+  pieceSet,
+  ariaLabel,
+  selected = null,
+  legalTargets = new Set<Square>(),
+  lastMove = null,
+  classForSquare,
+  onSquareClick,
+  draggable,
+  onDragStart,
+  onDrop,
+  showCoordinates = false,
+  onCancel,
+  children,
 }: Props) {
   const squares = displayedSquares(orientation)
-  return <div className="board" role="grid" aria-label={ariaLabel}>
-    {squares.map((square, index) => {
-      const piece = game.get(square)
-      const row = Math.floor(index / 8)
-      const col = index % 8
-      const light = isLightSquare(square)
-      const target = legalTargets.has(square)
-      const last = lastMove?.from === square || lastMove?.to === square
-      return <button
-        key={square}
-        type="button"
-        className={`square ${light ? 'light' : 'dark'} ${selected === square ? 'selected' : ''} ${target ? 'target' : ''} ${last ? 'last-move' : ''} ${classForSquare?.(square) ?? ''}`}
-        onClick={() => onSquareClick?.(square)}
-        onDragOver={onDrop ? (event) => event.preventDefault() : undefined}
-        onDrop={onDrop ? (event) => onDrop(square, event) : undefined}
-        aria-label={square}
-      >
-        {piece && <span className={`piece piece-${pieceSet} ${piece.color}`} draggable={draggable?.(square) ?? false} onDragStart={onDragStart ? (event) => onDragStart(square, event) : undefined}>
-          <img src={pieceAsset(pieceSet, piece.color, piece.type)} alt={PIECE_SYMBOLS[`${piece.color}${piece.type}`]} draggable={false} />
-        </span>}
-        {showCoordinates && col === 0 && <span className={`coord rank-label ${light ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[1]}</span>}
-        {showCoordinates && row === 7 && <span className={`coord file-label ${light ? 'on-light' : 'on-dark'}`} aria-hidden="true">{square[0]}</span>}
-      </button>
-    })}
-    {children}
-  </div>
+  const buttonsRef = useRef(new Map<Square, HTMLButtonElement>())
+  const [focusedSquare, setFocusedSquare] = useState<Square | null>(null)
+  // Roving tabindex: the board is a single Tab stop and the arrow keys move between squares.
+  const tabStop = focusedSquare ?? selected ?? squares[56]
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === 'Escape') {
+      onCancel?.()
+      return
+    }
+    const row = Math.floor(index / 8)
+    const col = index % 8
+    let next: number | null = null
+    const step = NAVIGATION_KEYS[event.key]
+    if (step) {
+      const nextRow = row + step[0]
+      const nextCol = col + step[1]
+      if (nextRow >= 0 && nextRow < 8 && nextCol >= 0 && nextCol < 8) next = nextRow * 8 + nextCol
+      else next = index
+    } else if (event.key === 'Home') next = row * 8
+    else if (event.key === 'End') next = row * 8 + 7
+    if (next === null) return
+    event.preventDefault()
+    buttonsRef.current.get(squares[next])?.focus()
+  }
+
+  return (
+    <div className="board" role="group" aria-label={`${ariaLabel}. Use as setas para navegar e Enter para selecionar.`}>
+      {squares.map((square, index) => {
+        const piece = game.get(square)
+        const row = Math.floor(index / 8)
+        const col = index % 8
+        const light = isLightSquare(square)
+        const target = legalTargets.has(square)
+        const last = lastMove?.from === square || lastMove?.to === square
+        return (
+          <button
+            key={square}
+            ref={(element) => {
+              if (element) buttonsRef.current.set(square, element)
+              else buttonsRef.current.delete(square)
+            }}
+            type="button"
+            tabIndex={square === tabStop ? 0 : -1}
+            onFocus={() => setFocusedSquare(square)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+            className={`square ${light ? 'light' : 'dark'} ${selected === square ? 'selected' : ''} ${target ? 'target' : ''} ${last ? 'last-move' : ''} ${classForSquare?.(square) ?? ''}`}
+            onClick={() => onSquareClick?.(square)}
+            onDragOver={onDrop ? (event) => event.preventDefault() : undefined}
+            onDrop={onDrop ? (event) => onDrop(square, event) : undefined}
+            aria-label={squareLabel(square, piece, selected === square, target)}
+          >
+            {piece && (
+              <span
+                className={`piece piece-${pieceSet} ${piece.color}`}
+                draggable={draggable?.(square) ?? false}
+                onDragStart={onDragStart ? (event) => onDragStart(square, event) : undefined}
+              >
+                <img
+                  src={pieceAsset(pieceSet, piece.color, piece.type)}
+                  alt={PIECE_SYMBOLS[`${piece.color}${piece.type}`]}
+                  draggable={false}
+                />
+              </span>
+            )}
+            {showCoordinates && col === 0 && (
+              <span className={`coord rank-label ${light ? 'on-light' : 'on-dark'}`} aria-hidden="true">
+                {square[1]}
+              </span>
+            )}
+            {showCoordinates && row === 7 && (
+              <span className={`coord file-label ${light ? 'on-light' : 'on-dark'}`} aria-hidden="true">
+                {square[0]}
+              </span>
+            )}
+          </button>
+        )
+      })}
+      {children}
+    </div>
+  )
 }

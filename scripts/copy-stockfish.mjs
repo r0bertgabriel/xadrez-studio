@@ -4,6 +4,8 @@ import { resolve } from 'node:path'
 const sourceDir = resolve('node_modules/stockfish/bin')
 const targetDir = resolve('public/stockfish')
 const files = [
+  'stockfish-19-lite.js',
+  'stockfish-19-lite.wasm',
   'stockfish-19-lite-single.js',
   'stockfish-19-lite-single.wasm',
   'stockfish-19-single.js',

@@ -5,7 +5,11 @@ import type { Point } from './types'
 export type BoardSignature = Partial<Record<Square, number>>
 
 /** Average luminance (0-255) sampled from a small patch at each calibrated square's center. */
-export function sampleBoardSignature(context: CanvasRenderingContext2D, corners: [Point, Point, Point, Point], orientation: Color): BoardSignature {
+export function sampleBoardSignature(
+  context: CanvasRenderingContext2D,
+  corners: [Point, Point, Point, Point],
+  orientation: Color,
+): BoardSignature {
   const signature: BoardSignature = {}
   const { width, height } = context.canvas
   const patch = Math.max(4, Math.round((Math.min(width, height) / 8) * 0.22))
@@ -49,8 +53,13 @@ export function moveFootprint(move: Move): Square[] {
   const squares = new Set<Square>([move.from, move.to])
   if (move.isKingsideCastle() || move.isQueensideCastle()) {
     const rank = move.color === 'w' ? '1' : '8'
-    if (move.isKingsideCastle()) { squares.add(`h${rank}` as Square); squares.add(`f${rank}` as Square) }
-    else { squares.add(`a${rank}` as Square); squares.add(`d${rank}` as Square) }
+    if (move.isKingsideCastle()) {
+      squares.add(`h${rank}` as Square)
+      squares.add(`f${rank}` as Square)
+    } else {
+      squares.add(`a${rank}` as Square)
+      squares.add(`d${rank}` as Square)
+    }
   }
   if (move.isEnPassant()) squares.add(`${move.to[0]}${move.from[1]}` as Square)
   return [...squares]

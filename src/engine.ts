@@ -61,6 +61,8 @@ const MULTI_THREADED_BUILDS: Partial<Record<StockfishVariant, EngineBuild>> = {
 }
 const ENGINE_READY_TIMEOUT_MS = 12_000
 const ENGINE_SEARCH_TIMEOUT_MS = 30_000
+/** How long a `stop`ped search may take to print its `bestmove` before the worker is considered hung. */
+const ENGINE_STOP_GRACE_MS = 5_000
 const MAX_ENGINE_THREADS = 8
 const THREADED_HASH_MB = 64
 
@@ -98,6 +100,9 @@ export class StockfishEngine {
   private destroyed = false
   private workerFailed = false
   private analysisGeneration = 0
+  /** True between posting `go` and receiving its `bestmove`, even if nobody awaits the result anymore. */
+  private searching = false
+  private searchFinishedWaiters: Array<() => void> = []
   private readonly variant: StockfishVariant
   private build: EngineBuild
   private readonly searchListeners = new Set<SearchListener>()
@@ -126,9 +131,8 @@ export class StockfishEngine {
     const generation = this.analysisGeneration
     return this.enqueue(async () => {
       this.ensureCurrentAnalysis(generation)
-      await this.ensureReady()
+      await this.prepareForSearch()
       this.ensureCurrentAnalysis(generation)
-      this.worker.postMessage('stop')
       this.worker.postMessage('setoption name UCI_LimitStrength value false')
       this.worker.postMessage(`setoption name MultiPV value ${Math.max(1, Math.min(5, multiPv))}`)
       await this.waitForReady()
@@ -142,9 +146,8 @@ export class StockfishEngine {
     const generation = this.analysisGeneration
     return this.enqueue(async () => {
       this.ensureCurrentAnalysis(generation)
-      await this.ensureReady()
+      await this.prepareForSearch()
       this.ensureCurrentAnalysis(generation)
-      this.worker.postMessage('stop')
       this.worker.postMessage('setoption name MultiPV value 1')
       this.worker.postMessage('setoption name UCI_LimitStrength value true')
       this.worker.postMessage(`setoption name UCI_Elo value ${Math.max(1320, Math.min(3190, elo))}`)
@@ -178,8 +181,7 @@ export class StockfishEngine {
 
   newGame() {
     return this.enqueue(async () => {
-      await this.ensureReady()
-      this.stop()
+      await this.prepareForSearch()
       this.worker.postMessage('ucinewgame')
       await this.waitForReady()
     })
@@ -191,10 +193,14 @@ export class StockfishEngine {
     this.analysisGeneration += 1
     this.rejectPending(new Error('Engine encerrada.'))
     this.worker.terminate()
+    this.searching = false
+    this.flushSearchFinishedWaiters()
   }
 
   private createWorker() {
     const worker = new Worker(this.build.path)
+    this.searching = false
+    this.flushSearchFinishedWaiters()
     worker.onmessage = (event) => this.handleMessage(String(event.data))
     worker.onerror = () => {
       this.markWorkerFailed(new Error('O Web Worker do Stockfish falhou durante a execução.'), worker)
@@ -298,6 +304,41 @@ export class StockfishEngine {
     this.ensureAlive()
   }
 
+  /**
+   * Leaves the worker idle and ready for new commands. The stockfish.js wrapper only queues `go` and
+   * `setoption` while searching; `isready`, `position` and `ucinewgame` run immediately. Starting a new
+   * search before the previous `bestmove` arrives would let that stale `bestmove` resolve the new
+   * request (wrong hint, no lines, live view marked as finished) and change the position mid-search.
+   */
+  private async prepareForSearch() {
+    await this.ensureReady()
+    if (!this.searching) return
+    await this.waitForSearchToFinish()
+    // A hung search marks the worker as failed; this restarts it.
+    await this.ensureReady()
+  }
+
+  private waitForSearchToFinish(): Promise<void> {
+    const worker = this.worker
+    return new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        this.markWorkerFailed(new Error('Stockfish não interrompeu a busca anterior.'), worker)
+        resolve()
+      }, ENGINE_STOP_GRACE_MS)
+      this.searchFinishedWaiters.push(() => {
+        window.clearTimeout(timeoutId)
+        resolve()
+      })
+      worker.postMessage('stop')
+    })
+  }
+
+  private flushSearchFinishedWaiters() {
+    const waiters = this.searchFinishedWaiters
+    this.searchFinishedWaiters = []
+    for (const waiter of waiters) waiter()
+  }
+
   private waitForReady(): Promise<void> {
     return new Promise((resolve, reject) => {
       let settled = false
@@ -335,12 +376,16 @@ export class StockfishEngine {
   private startSearch(fen: string, command: string, generation: number): Promise<EngineAnalysis> {
     this.ensureCurrentAnalysis(generation)
     return new Promise<EngineAnalysis>((resolve, reject) => {
+      const worker = this.worker
+      // On timeout, `stop` makes Stockfish answer with the best line found so far; only a worker
+      // that ignores it too is treated as hung and restarted.
       const timeoutId = window.setTimeout(() => {
-        if (!this.pending || this.pending.fen !== fen || this.pending.generation !== generation) return
-        this.worker.postMessage('stop')
         const pending = this.pending
-        this.pending = null
-        pending.reject(new Error('A análise do Stockfish excedeu o tempo limite.'))
+        if (!pending || pending.fen !== fen || pending.generation !== generation) return
+        worker.postMessage('stop')
+        pending.timeoutId = window.setTimeout(() => {
+          this.markWorkerFailed(new Error('A análise do Stockfish excedeu o tempo limite.'), worker)
+        }, ENGINE_STOP_GRACE_MS)
       }, ENGINE_SEARCH_TIMEOUT_MS)
 
       this.pending = {
@@ -357,6 +402,7 @@ export class StockfishEngine {
         currMove: null,
         currMoveNumber: null,
       }
+      this.searching = true
       this.worker.postMessage(command)
     })
   }
@@ -372,8 +418,10 @@ export class StockfishEngine {
   private markWorkerFailed(error: Error, worker = this.worker) {
     if (worker !== this.worker || this.destroyed) return
     this.workerFailed = true
+    this.searching = false
     this.rejectPending(error)
     worker.terminate()
+    this.flushSearchFinishedWaiters()
   }
 
   private ensureAlive() {
@@ -398,6 +446,11 @@ export class StockfishEngine {
     if (message.startsWith('info string CRITICAL ERROR')) {
       this.markWorkerFailed(new Error(`Stockfish rejeitou a posição ou comando UCI: ${message}`))
       return
+    }
+
+    if (message.startsWith('bestmove ')) {
+      this.searching = false
+      this.flushSearchFinishedWaiters()
     }
 
     if (!this.pending) return
